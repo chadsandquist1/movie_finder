@@ -63,7 +63,10 @@ resource "aws_iam_role_policy" "cognito_authenticated_lambda_invoke" {
       {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
-        Resource = aws_lambda_function.hello_world.arn
+        Resource = [
+          aws_lambda_function.movieq_list.arn,
+          aws_lambda_function.movieq_write.arn,
+        ]
       }
     ]
   })

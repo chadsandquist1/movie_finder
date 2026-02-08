@@ -65,19 +65,22 @@ export async function login(config, username, password) {
   };
 }
 
-export async function invokeLambda(config, credentials) {
+export async function invokeLambda(config, credentials, functionName, payload) {
   const lambdaClient = new LambdaClient({
     region: config.region,
     credentials,
   });
 
+  const params = { FunctionName: functionName };
+  if (payload !== undefined) {
+    params.Payload = new TextEncoder().encode(JSON.stringify(payload));
+  }
+
   const result = await loggedSend(
     lambdaClient,
-    new InvokeCommand({
-      FunctionName: config.lambdaFunctionName,
-    })
+    new InvokeCommand(params)
   );
 
-  const payload = new TextDecoder().decode(result.Payload);
-  return payload;
+  const responsePayload = new TextDecoder().decode(result.Payload);
+  return responsePayload;
 }

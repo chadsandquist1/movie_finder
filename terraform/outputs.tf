@@ -23,14 +23,24 @@ output "s3_website_endpoint" {
   value       = aws_s3_bucket_website_configuration.static_site.website_endpoint
 }
 
-output "lambda_function_name" {
-  description = "Lambda function name"
-  value       = aws_lambda_function.hello_world.function_name
+output "movieq_list_function_name" {
+  description = "movieq_list Lambda function name"
+  value       = aws_lambda_function.movieq_list.function_name
 }
 
-output "lambda_function_arn" {
-  description = "Lambda function ARN"
-  value       = aws_lambda_function.hello_world.arn
+output "movieq_list_function_arn" {
+  description = "movieq_list Lambda function ARN"
+  value       = aws_lambda_function.movieq_list.arn
+}
+
+output "movieq_write_function_name" {
+  description = "movieq_write Lambda function name"
+  value       = aws_lambda_function.movieq_write.function_name
+}
+
+output "movieq_write_function_arn" {
+  description = "movieq_write Lambda function ARN"
+  value       = aws_lambda_function.movieq_write.arn
 }
 
 output "dynamodb_table_name" {
