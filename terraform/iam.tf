@@ -1,0 +1,70 @@
+# --- Lambda Execution Role ---
+
+resource "aws_iam_role" "lambda_execution" {
+  name = "${local.name_prefix}-lambda-execution"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# --- Cognito Authenticated Role ---
+
+resource "aws_iam_role" "cognito_authenticated" {
+  name = "${local.name_prefix}-cognito-authenticated"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = "cognito-identity.amazonaws.com"
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.main.id
+          }
+          "ForAnyValue:StringLike" = {
+            "cognito-identity.amazonaws.com:amr" = "authenticated"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy" "cognito_authenticated_lambda_invoke" {
+  name = "lambda-invoke"
+  role = aws_iam_role.cognito_authenticated.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "lambda:InvokeFunction"
+        Resource = aws_lambda_function.hello_world.arn
+      }
+    ]
+  })
+}
