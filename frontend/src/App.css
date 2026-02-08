@@ -1,0 +1,156 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f1117;
+  color: #e1e4e8;
+  padding: 2rem;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b949e;
+  margin-bottom: 0.75rem;
+}
+
+.panel {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+input {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #e1e4e8;
+  font-size: 0.9rem;
+}
+
+input:disabled {
+  opacity: 0.5;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #21262d;
+  color: #e1e4e8;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background: #30363d;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.log-panel .log-entries {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.empty {
+  color: #484f58;
+  font-style: italic;
+}
+
+.log-entry {
+  border-left: 3px solid #30363d;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.log-entry.success {
+  border-left-color: #3fb950;
+}
+
+.log-entry.error {
+  border-left-color: #f85149;
+}
+
+.log-entry.pending {
+  border-left-color: #d29922;
+}
+
+.log-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.log-time {
+  color: #8b949e;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.log-method {
+  font-weight: 600;
+}
+
+.log-duration {
+  color: #8b949e;
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
+details {
+  margin-top: 0.25rem;
+}
+
+summary {
+  cursor: pointer;
+  color: #8b949e;
+  font-size: 0.8rem;
+}
+
+pre {
+  background: #0d1117;
+  padding: 0.5rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.error-text {
+  color: #f85149;
+}
