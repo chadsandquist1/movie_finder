@@ -10,22 +10,23 @@ import {
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { loggedSend } from './logger';
 
-const REGION = import.meta.env.VITE_AWS_REGION;
-const USER_POOL_ID = import.meta.env.VITE_USER_POOL_ID;
-const CLIENT_ID = import.meta.env.VITE_CLIENT_ID;
-const IDENTITY_POOL_ID = import.meta.env.VITE_IDENTITY_POOL_ID;
-const LAMBDA_FUNCTION_NAME = import.meta.env.VITE_LAMBDA_FUNCTION_NAME;
+export async function fetchConfig() {
+  const res = await fetch('/config.json');
+  if (!res.ok) throw new Error(`Failed to load config: ${res.status}`);
+  return res.json();
+}
 
-const providerKey = `cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}`;
+export async function login(config, username, password) {
+  const { region, userPoolId, clientId, identityPoolId } = config;
+  const providerKey = `cognito-idp.${region}.amazonaws.com/${userPoolId}`;
 
-export async function login(username, password) {
   // Step 1: InitiateAuth — get tokens
-  const cognitoProvider = new CognitoIdentityProviderClient({ region: REGION });
+  const cognitoProvider = new CognitoIdentityProviderClient({ region });
   const authResult = await loggedSend(
     cognitoProvider,
     new InitiateAuthCommand({
       AuthFlow: 'USER_PASSWORD_AUTH',
-      ClientId: CLIENT_ID,
+      ClientId: clientId,
       AuthParameters: {
         USERNAME: username,
         PASSWORD: password,
@@ -36,11 +37,11 @@ export async function login(username, password) {
   const idToken = authResult.AuthenticationResult.IdToken;
 
   // Step 2: GetId — exchange token for identity
-  const cognitoIdentity = new CognitoIdentityClient({ region: REGION });
+  const cognitoIdentity = new CognitoIdentityClient({ region });
   const idResult = await loggedSend(
     cognitoIdentity,
     new GetIdCommand({
-      IdentityPoolId: IDENTITY_POOL_ID,
+      IdentityPoolId: identityPoolId,
       Logins: { [providerKey]: idToken },
     })
   );
@@ -64,16 +65,16 @@ export async function login(username, password) {
   };
 }
 
-export async function invokeLambda(credentials) {
+export async function invokeLambda(config, credentials) {
   const lambdaClient = new LambdaClient({
-    region: REGION,
+    region: config.region,
     credentials,
   });
 
   const result = await loggedSend(
     lambdaClient,
     new InvokeCommand({
-      FunctionName: LAMBDA_FUNCTION_NAME,
+      FunctionName: config.lambdaFunctionName,
     })
   );
 

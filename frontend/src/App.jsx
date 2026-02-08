@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { login, invokeLambda } from './awsClients';
+import { fetchConfig, login, invokeLambda } from './awsClients';
 import { subscribe, clearLogs } from './logger';
 
 export default function App() {
+  const [config, setConfig] = useState(null);
+  const [configError, setConfigError] = useState(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [session, setSession] = useState(null);
@@ -15,10 +17,16 @@ export default function App() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  useEffect(() => {
+    fetchConfig()
+      .then(setConfig)
+      .catch((err) => setConfigError(err.message));
+  }, []);
+
   const handleLogin = async () => {
     setLoading(true);
     try {
-      const result = await login(username, password);
+      const result = await login(config, username, password);
       setSession(result);
     } catch (err) {
       // error already in log panel
@@ -34,7 +42,7 @@ export default function App() {
   const handleInvoke = async () => {
     setLoading(true);
     try {
-      await invokeLambda(session.credentials);
+      await invokeLambda(config, session.credentials);
     } catch (err) {
       // error already in log panel
     } finally {
@@ -43,6 +51,28 @@ export default function App() {
   };
 
   const loggedIn = session !== null;
+  const ready = config !== null;
+
+  if (configError) {
+    return (
+      <div className="app">
+        <h1>Movie Finder</h1>
+        <section className="panel">
+          <p className="error-text">Failed to load config: {configError}</p>
+          <p>For local dev, place a <code>config.json</code> in <code>frontend/public/</code>.</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <div className="app">
+        <h1>Movie Finder</h1>
+        <section className="panel"><p>Loading config...</p></section>
+      </div>
+    );
+  }
 
   return (
     <div className="app">

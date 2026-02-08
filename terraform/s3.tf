@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "static_site" {
-  bucket = "${local.name_prefix}-static-site"
+  bucket = "mojodojo-moviefinder-${var.environment}"
 
   tags = local.common_tags
 }

@@ -33,6 +33,11 @@ output "lambda_function_arn" {
   value       = aws_lambda_function.hello_world.arn
 }
 
+output "dynamodb_table_name" {
+  description = "DynamoDB movies table name"
+  value       = aws_dynamodb_table.movies.name
+}
+
 output "aws_region" {
   description = "AWS region"
   value       = var.aws_region
