@@ -69,7 +69,7 @@ export default function App() {
   if (configError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat px-4" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
-        <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-lg">
+        <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-xl">
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-1">MojoDojo</h1>
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-8">MovieQ</h1>
           <p className="text-red-600 text-sm mb-2">Failed to load config: {configError}</p>
@@ -84,7 +84,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat px-4" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
-        <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-lg">
+        <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-xl">
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-1">MojoDojo</h1>
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-8">MovieQ</h1>
           <p className="text-gray-400 text-sm">Loading...</p>
@@ -95,7 +95,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat px-4" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
-      <div className="bg-white rounded-2xl shadow-2xl p-10 sm:p-14 w-full max-w-lg">
+      <div className="bg-white rounded-2xl shadow-2xl p-10 sm:p-14 w-full max-w-xl">
         {/* Left-justified Medium-style title */}
         <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-1">MojoDojo</h1>
         <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-3">MovieQ</h1>

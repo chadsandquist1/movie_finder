@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { generateKeyBetween } from 'fractional-indexing';
 import { invokeLambda } from './awsClients';
 import MovieRow from './MovieRow';
@@ -9,6 +9,8 @@ const lists = [
   { key: 'notInterested', label: 'Not Interested' },
 ];
 
+const ANIMATION_MS = 250;
+
 const emptyForm = { title: '', year: '', genre: '', rating: '', director: '', status: 'active' };
 
 export default function MovieList({ movies, config, credentials, onRefresh, onLogout }) {
@@ -17,7 +19,14 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [animating, setAnimating] = useState(null); // { id1, id2, offset1, offset2 }
   const dropdownRef = useRef(null);
+  const rowRefs = useRef({});
+
+  const setRowRef = useCallback((movieId, el) => {
+    if (el) rowRefs.current[movieId] = el;
+    else delete rowRefs.current[movieId];
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -38,7 +47,6 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const handleAdd = async () => {
     setSaving(true);
     try {
-      // Compute rank after the last movie in the target status list
       const targetList = movies
         .filter((m) => m.status === form.status)
         .sort((a, b) => a.rank.localeCompare(b.rank));
@@ -68,7 +76,6 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const handleStatusChange = async (movie, newStatus) => {
     if (newStatus === movie.status) return;
     try {
-      // Compute rank at end of the target list
       const targetList = movies
         .filter((m) => m.status === newStatus)
         .sort((a, b) => a.rank.localeCompare(b.rank));
@@ -85,6 +92,50 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     } catch (err) {
       // error visible in SDK log panel
     }
+  };
+
+  const handleSwap = async (index, direction) => {
+    if (animating) return;
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= filtered.length) return;
+
+    const movieA = filtered[index];
+    const movieB = filtered[targetIndex];
+    const elA = rowRefs.current[movieA.movie_id];
+    const elB = rowRefs.current[movieB.movie_id];
+    if (!elA || !elB) return;
+
+    const rectA = elA.getBoundingClientRect();
+    const rectB = elB.getBoundingClientRect();
+    const offsetA = rectB.top - rectA.top;
+    const offsetB = rectA.top - rectB.top;
+
+    // Start animation
+    setAnimating({
+      [movieA.movie_id]: offsetA,
+      [movieB.movie_id]: offsetB,
+    });
+
+    // After animation, swap ranks and persist
+    setTimeout(async () => {
+      setAnimating(null);
+      try {
+        // Swap ranks: A gets B's rank, B gets A's rank
+        await Promise.all([
+          invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+            movie_id: movieA.movie_id,
+            rank: movieB.rank,
+          }),
+          invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+            movie_id: movieB.movie_id,
+            rank: movieA.rank,
+          }),
+        ]);
+        await onRefresh();
+      } catch (err) {
+        // error visible in SDK log panel
+      }
+    }, ANIMATION_MS);
   };
 
   const formValid = form.title && form.year && form.genre && form.rating && form.director;
@@ -234,7 +285,22 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
             <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
           )}
           {filtered.map((movie, index) => (
-            <MovieRow key={movie.movie_id} movie={movie} displayOrder={index + 1} onStatusChange={handleStatusChange} />
+            <MovieRow
+              key={movie.movie_id}
+              ref={(el) => setRowRef(movie.movie_id, el)}
+              movie={movie}
+              displayOrder={index + 1}
+              isFirst={index === 0}
+              isLast={index === filtered.length - 1}
+              onStatusChange={handleStatusChange}
+              onMoveUp={() => handleSwap(index, -1)}
+              onMoveDown={() => handleSwap(index, 1)}
+              style={
+                animating && animating[movie.movie_id] !== undefined
+                  ? { transform: `translateY(${animating[movie.movie_id]}px)`, zIndex: 10 }
+                  : undefined
+              }
+            />
           ))}
         </div>
       </main>
