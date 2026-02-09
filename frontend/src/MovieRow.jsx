@@ -29,8 +29,8 @@ const MovieRow = forwardRef(function MovieRow(
   return (
     <div
       ref={ref}
-      className="flex items-center gap-3 py-4 px-5 transition-transform duration-250 ease-in-out"
-      style={style}
+      className="flex items-center gap-3 py-4 px-5"
+      style={{ transition: 'transform 350ms ease-out', ...style }}
     >
       {/* Reorder arrows */}
       <div className="flex flex-col shrink-0">

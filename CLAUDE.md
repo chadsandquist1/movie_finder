@@ -19,9 +19,12 @@ Frontend commands must be run from the `frontend/` directory.
 ```bash
 cd frontend
 npm install             # Install dependencies
-npm run dev             # Start local dev server
+npm run dev             # Start local dev server (port 8080)
 npm run build           # Production build
+npx playwright test     # Run Playwright tests (requires npm install first)
 ```
+
+**Important:** Always run `npx playwright test` from `frontend/` after making frontend changes. All 28 tests must pass before considering work complete.
 
 ## Architecture
 
@@ -51,8 +54,19 @@ This is an AWS serverless project managed with Terraform. The system provides Co
 - `awsClients.js` - Cognito auth flow and `invokeLambda(config, credentials, functionName, payload?)` helper
 - `App.jsx` - Login flow, calls `movieq_list` on login to fetch movies
 - `MovieList.jsx` - Renders movies sorted by `rank` (lexicographic string sort), computes display order (1, 2, 3...) from sorted position. "Add Movie" form with status dropdown writes to `movieq_write` lambda.
-- `MovieRow.jsx` - Renders a single movie row with `displayOrder` prop and inline status dropdown
+- `MovieRow.jsx` - `forwardRef` component with reorder arrows, kebab menu (Move to Top/Bottom, Edit), status dropdown
+- `Diagnostic.jsx` - Debug page at `/diagnostic/` with Login, Invoke Lambda, Get Movies buttons and SDK log
 - Movies use lexicographic `rank` strings (e.g. `"a0"`, `"a1"`) from the `fractional-indexing` pattern for O(1) reordering
+- Reorder animations use `translateY` with 350ms ease-out transitions
+- All pages use the `cinema-background-heavy.jpg` background image
+
+### Playwright Tests (`frontend/tests/`)
+
+- Tests run against local Vite dev server (port 8080) with **all AWS calls mocked** (Cognito, Lambda)
+- Mock setup in `tests/helpers.js` — intercepts `/config.json`, Cognito auth, and Lambda invoke routes
+- Test files: `login.spec.js`, `movie-list.spec.js`, `search.spec.js`, `add-edit-movie.spec.js`, `kebab-menu.spec.js`, `reorder.spec.js`
+- Run: `cd frontend && npx playwright test`
+- First-time setup: `npx playwright install chromium`
 
 ### DynamoDB Schema
 

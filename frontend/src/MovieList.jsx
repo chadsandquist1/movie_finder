@@ -94,7 +94,21 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     }
   };
 
-  const ANIM_MS = 250;
+  const ANIM_MS = 350;
+
+  const animateAndPersist = (movieId, targetEl, persistFn) => {
+    const movedEl = rowRefs.current[movieId];
+    if (!movedEl || !targetEl) {
+      persistFn();
+      return;
+    }
+    const offset = targetEl.getBoundingClientRect().top - movedEl.getBoundingClientRect().top;
+    setAnimating({ [movieId]: offset });
+    setTimeout(async () => {
+      setAnimating(null);
+      await persistFn();
+    }, ANIM_MS);
+  };
 
   const handleSwap = async (index, direction) => {
     if (animating) return;
@@ -103,20 +117,8 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
 
     const movieA = filtered[index];
     const movieB = filtered[targetIndex];
-    const elA = rowRefs.current[movieA.movie_id];
-    const elB = rowRefs.current[movieB.movie_id];
-    if (!elA || !elB) return;
 
-    const rectA = elA.getBoundingClientRect();
-    const rectB = elB.getBoundingClientRect();
-
-    setAnimating({
-      [movieA.movie_id]: rectB.top - rectA.top,
-      [movieB.movie_id]: rectA.top - rectB.top,
-    });
-
-    setTimeout(async () => {
-      setAnimating(null);
+    animateAndPersist(movieA.movie_id, rowRefs.current[movieB.movie_id], async () => {
       try {
         await Promise.all([
           invokeLambda(config, credentials, config.movieqWriteFunctionName, {
@@ -132,37 +134,16 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       } catch (err) {
         // error visible in SDK log panel
       }
-    }, ANIM_MS);
+    });
   };
 
   const handleMoveToTop = async (movie) => {
     if (animating) return;
-    const list = movies
-      .filter((m) => m.status === movie.status)
-      .sort((a, b) => a.rank.localeCompare(b.rank));
+    const list = filtered;
     if (list.length === 0 || list[0].movie_id === movie.movie_id) return;
-
-    // Animate: moved row slides up, rows above it slide down
-    const movedEl = rowRefs.current[movie.movie_id];
-    const topEl = rowRefs.current[list[0].movie_id];
-    if (!movedEl || !topEl) return;
-
-    const movedRect = movedEl.getBoundingClientRect();
-    const topRect = topEl.getBoundingClientRect();
-    const rowHeight = movedRect.height;
-
-    const offsets = { [movie.movie_id]: topRect.top - movedRect.top };
-    for (const m of list) {
-      if (m.movie_id === movie.movie_id) break;
-      if (rowRefs.current[m.movie_id]) {
-        offsets[m.movie_id] = rowHeight;
-      }
-    }
-    setAnimating(offsets);
-
     const rank = generateKeyBetween(null, list[0].rank);
-    setTimeout(async () => {
-      setAnimating(null);
+
+    animateAndPersist(movie.movie_id, rowRefs.current[list[0].movie_id], async () => {
       try {
         await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
           movie_id: movie.movie_id,
@@ -172,38 +153,16 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       } catch (err) {
         // error visible in SDK log panel
       }
-    }, ANIM_MS);
+    });
   };
 
   const handleMoveToBottom = async (movie) => {
     if (animating) return;
-    const list = movies
-      .filter((m) => m.status === movie.status)
-      .sort((a, b) => a.rank.localeCompare(b.rank));
+    const list = filtered;
     if (list.length === 0 || list[list.length - 1].movie_id === movie.movie_id) return;
-
-    // Animate: moved row slides down, rows below it slide up
-    const movedEl = rowRefs.current[movie.movie_id];
-    const bottomEl = rowRefs.current[list[list.length - 1].movie_id];
-    if (!movedEl || !bottomEl) return;
-
-    const movedRect = movedEl.getBoundingClientRect();
-    const bottomRect = bottomEl.getBoundingClientRect();
-    const rowHeight = movedRect.height;
-
-    const offsets = { [movie.movie_id]: bottomRect.top - movedRect.top };
-    let pastMoved = false;
-    for (const m of list) {
-      if (m.movie_id === movie.movie_id) { pastMoved = true; continue; }
-      if (pastMoved && rowRefs.current[m.movie_id]) {
-        offsets[m.movie_id] = -rowHeight;
-      }
-    }
-    setAnimating(offsets);
-
     const rank = generateKeyBetween(list[list.length - 1].rank, null);
-    setTimeout(async () => {
-      setAnimating(null);
+
+    animateAndPersist(movie.movie_id, rowRefs.current[list[list.length - 1].movie_id], async () => {
       try {
         await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
           movie_id: movie.movie_id,
@@ -213,7 +172,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       } catch (err) {
         // error visible in SDK log panel
       }
-    }, ANIM_MS);
+    });
   };
 
   const handleStartEdit = (movie) => {
@@ -468,6 +427,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
                   {group.movies.map((movie, index) => (
                     <MovieRow
                       key={movie.movie_id}
+                      ref={(el) => setRowRef(movie.movie_id, el)}
                       movie={movie}
                       displayOrder={index + 1}
                       isFirst={index === 0}
@@ -478,6 +438,11 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
                       onMoveToTop={() => handleMoveToTop(movie)}
                       onMoveToBottom={() => handleMoveToBottom(movie)}
                       onEdit={() => handleStartEdit(movie)}
+                      style={
+                        animating && animating[movie.movie_id] !== undefined
+                          ? { transform: `translateY(${animating[movie.movie_id]}px)` }
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -492,6 +457,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
             {filtered.map((movie, index) => (
               <MovieRow
                 key={movie.movie_id}
+                ref={(el) => setRowRef(movie.movie_id, el)}
                 movie={movie}
                 displayOrder={index + 1}
                 isFirst={index === 0}
@@ -502,6 +468,11 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
                 onMoveToTop={() => handleMoveToTop(movie)}
                 onMoveToBottom={() => handleMoveToBottom(movie)}
                 onEdit={() => handleStartEdit(movie)}
+                style={
+                  animating && animating[movie.movie_id] !== undefined
+                    ? { transform: `translateY(${animating[movie.movie_id]}px)` }
+                    : undefined
+                }
               />
             ))}
           </div>
