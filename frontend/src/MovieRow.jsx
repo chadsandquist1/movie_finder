@@ -1,4 +1,6 @@
-import { forwardRef, useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const statusLabels = {
   active: 'My List',
@@ -8,10 +10,13 @@ const statusLabels = {
 
 const statusKeys = Object.keys(statusLabels);
 
-const MovieRow = forwardRef(function MovieRow(
-  { movie, displayOrder, onStatusChange, onMoveUp, onMoveDown, onMoveToTop, onMoveToBottom, onEdit, isFirst, isLast, style },
-  ref,
-) {
+/**
+ * Presentational movie row content — used by both SortableMovieRow and DragOverlay.
+ */
+export function MovieRowContent({
+  movie, displayOrder, onStatusChange, onMoveToTop, onMoveToBottom, onEdit,
+  isFirst, isLast, dragHandleProps, isDragging, isOverlay,
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -28,33 +33,25 @@ const MovieRow = forwardRef(function MovieRow(
 
   return (
     <div
-      ref={ref}
-      className="flex items-center gap-3 py-4 px-5"
-      style={{ transition: 'transform 350ms ease-out', ...style }}
+      className={`flex items-center gap-3 py-4 px-5 ${
+        isDragging ? 'opacity-40' : ''
+      } ${isOverlay ? 'bg-white rounded-2xl shadow-2xl' : ''}`}
     >
-      {/* Reorder arrows */}
-      <div className="flex flex-col shrink-0">
-        <button
-          onClick={onMoveUp}
-          disabled={isFirst}
-          className="text-gray-300 hover:text-gray-600 disabled:opacity-20 disabled:cursor-default cursor-pointer p-0.5 transition-colors"
-          aria-label="Move up"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-          </svg>
-        </button>
-        <button
-          onClick={onMoveDown}
-          disabled={isLast}
-          className="text-gray-300 hover:text-gray-600 disabled:opacity-20 disabled:cursor-default cursor-pointer p-0.5 transition-colors"
-          aria-label="Move down"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      </div>
+      {/* Drag handle */}
+      <button
+        className="shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 touch-none p-1"
+        aria-label="Drag to reorder"
+        {...dragHandleProps}
+      >
+        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+          <circle cx="7" cy="4" r="1.5" />
+          <circle cx="13" cy="4" r="1.5" />
+          <circle cx="7" cy="10" r="1.5" />
+          <circle cx="13" cy="10" r="1.5" />
+          <circle cx="7" cy="16" r="1.5" />
+          <circle cx="13" cy="16" r="1.5" />
+        </svg>
+      </button>
 
       <span className="text-2xl font-serif font-bold text-gray-300 w-8 shrink-0 text-right">
         {displayOrder}
@@ -130,6 +127,33 @@ const MovieRow = forwardRef(function MovieRow(
       </div>
     </div>
   );
-});
+}
 
-export default MovieRow;
+/**
+ * Sortable wrapper — wires useSortable to MovieRowContent.
+ */
+export default function SortableMovieRow(props) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.movie.movie_id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <MovieRowContent
+        {...props}
+        dragHandleProps={listeners}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+}

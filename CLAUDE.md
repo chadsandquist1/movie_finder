@@ -24,7 +24,7 @@ npm run build           # Production build
 npx playwright test     # Run Playwright tests (requires npm install first)
 ```
 
-**Important:** Always run `npx playwright test` from `frontend/` after making frontend changes. All 28 tests must pass before considering work complete.
+**Important:** Always run `npx playwright test` from `frontend/` after making frontend changes. All 27 tests must pass before considering work complete.
 
 ## Architecture
 
@@ -54,10 +54,11 @@ This is an AWS serverless project managed with Terraform. The system provides Co
 - `awsClients.js` - Cognito auth flow and `invokeLambda(config, credentials, functionName, payload?)` helper
 - `App.jsx` - Login flow, calls `movieq_list` on login to fetch movies
 - `MovieList.jsx` - Renders movies sorted by `rank` (lexicographic string sort), computes display order (1, 2, 3...) from sorted position. "Add Movie" form with status dropdown writes to `movieq_write` lambda.
-- `MovieRow.jsx` - `forwardRef` component with reorder arrows, kebab menu (Move to Top/Bottom, Edit), status dropdown
+- `MovieList.jsx` uses `@dnd-kit/core` + `@dnd-kit/sortable` for drag-and-drop reordering: `DndContext`, `SortableContext`, `DragOverlay`, `verticalListSortingStrategy`, `closestCenter` collision detection
+- `MovieRow.jsx` - Two exports: `MovieRowContent` (presentational, used by both sortable rows and DragOverlay) and `SortableMovieRow` (default, wraps `useSortable` hook). Drag handle (6-dot grip), kebab menu (Move to Top/Bottom, Edit), status dropdown
 - `Diagnostic.jsx` - Debug page at `/diagnostic/` with Login, Invoke Lambda, Get Movies buttons and SDK log
 - Movies use lexicographic `rank` strings (e.g. `"a0"`, `"a1"`) from the `fractional-indexing` pattern for O(1) reordering
-- Reorder animations use `translateY` with 350ms ease-out transitions
+- Drag-and-drop reorder computes new rank via `generateKeyBetween(before, after)` based on new neighbors
 - All pages use the `cinema-background-heavy.jpg` background image
 
 ### Playwright Tests (`frontend/tests/`)

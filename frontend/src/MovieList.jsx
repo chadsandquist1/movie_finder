@@ -1,7 +1,21 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { generateKeyBetween } from 'fractional-indexing';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
 import { invokeLambda } from './awsClients';
-import MovieRow from './MovieRow';
+import SortableMovieRow, { MovieRowContent } from './MovieRow';
 
 const lists = [
   { key: 'active', label: 'My List' },
@@ -17,16 +31,15 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [animating, setAnimating] = useState(null); // { [movie_id]: translateY }
   const [searchQuery, setSearchQuery] = useState('');
-  const [editing, setEditing] = useState(null); // movie being edited
+  const [editing, setEditing] = useState(null);
+  const [activeId, setActiveId] = useState(null); // currently dragged movie_id
   const dropdownRef = useRef(null);
-  const rowRefs = useRef({});
 
-  const setRowRef = useCallback((movieId, el) => {
-    if (el) rowRefs.current[movieId] = el;
-    else delete rowRefs.current[movieId];
-  }, []);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -94,86 +107,86 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     }
   };
 
-  const ANIM_MS = 350;
+  // --- Drag and drop ---
 
-  const animateAndPersist = (movieId, targetEl, persistFn) => {
-    const movedEl = rowRefs.current[movieId];
-    if (!movedEl || !targetEl) {
-      persistFn();
-      return;
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = filtered.findIndex((m) => m.movie_id === active.id);
+    const newIndex = filtered.findIndex((m) => m.movie_id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Compute new rank between the new neighbors
+    const beforeItem = newIndex > 0 ? filtered[newIndex > oldIndex ? newIndex : newIndex - 1] : null;
+    const afterItem = newIndex < filtered.length - 1 ? filtered[newIndex < oldIndex ? newIndex : newIndex + 1] : null;
+
+    let newRank;
+    if (newIndex === 0) {
+      newRank = generateKeyBetween(null, filtered[0].movie_id === active.id ? filtered[1]?.rank ?? null : filtered[0].rank);
+    } else if (newIndex === filtered.length - 1) {
+      const last = filtered[filtered.length - 1];
+      newRank = generateKeyBetween(last.movie_id === active.id ? filtered[filtered.length - 2]?.rank ?? null : last.rank, null);
+    } else {
+      // Dropping between two items — figure out the neighbors excluding the dragged item
+      const withoutDragged = filtered.filter((m) => m.movie_id !== active.id);
+      const insertAt = newIndex > oldIndex ? newIndex - 1 : newIndex;
+      const before = withoutDragged[insertAt - 1]?.rank ?? null;
+      const after = withoutDragged[insertAt]?.rank ?? null;
+      newRank = generateKeyBetween(before, after);
     }
-    const offset = targetEl.getBoundingClientRect().top - movedEl.getBoundingClientRect().top;
-    setAnimating({ [movieId]: offset });
-    setTimeout(async () => {
-      setAnimating(null);
-      await persistFn();
-    }, ANIM_MS);
+
+    try {
+      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+        movie_id: active.id,
+        rank: newRank,
+      });
+      await onRefresh();
+    } catch (err) {
+      // error visible in SDK log panel
+    }
   };
 
-  const handleSwap = async (index, direction) => {
-    if (animating) return;
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= filtered.length) return;
-
-    const movieA = filtered[index];
-    const movieB = filtered[targetIndex];
-
-    animateAndPersist(movieA.movie_id, rowRefs.current[movieB.movie_id], async () => {
-      try {
-        await Promise.all([
-          invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-            movie_id: movieA.movie_id,
-            rank: movieB.rank,
-          }),
-          invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-            movie_id: movieB.movie_id,
-            rank: movieA.rank,
-          }),
-        ]);
-        await onRefresh();
-      } catch (err) {
-        // error visible in SDK log panel
-      }
-    });
+  const handleDragCancel = () => {
+    setActiveId(null);
   };
+
+  // --- Move to top / bottom (from kebab menu) ---
 
   const handleMoveToTop = async (movie) => {
-    if (animating) return;
-    const list = filtered;
-    if (list.length === 0 || list[0].movie_id === movie.movie_id) return;
-    const rank = generateKeyBetween(null, list[0].rank);
-
-    animateAndPersist(movie.movie_id, rowRefs.current[list[0].movie_id], async () => {
-      try {
-        await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-          movie_id: movie.movie_id,
-          rank,
-        });
-        await onRefresh();
-      } catch (err) {
-        // error visible in SDK log panel
-      }
-    });
+    if (filtered.length === 0 || filtered[0].movie_id === movie.movie_id) return;
+    const rank = generateKeyBetween(null, filtered[0].rank);
+    try {
+      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+        movie_id: movie.movie_id,
+        rank,
+      });
+      await onRefresh();
+    } catch (err) {
+      // error visible in SDK log panel
+    }
   };
 
   const handleMoveToBottom = async (movie) => {
-    if (animating) return;
-    const list = filtered;
-    if (list.length === 0 || list[list.length - 1].movie_id === movie.movie_id) return;
-    const rank = generateKeyBetween(list[list.length - 1].rank, null);
-
-    animateAndPersist(movie.movie_id, rowRefs.current[list[list.length - 1].movie_id], async () => {
-      try {
-        await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-          movie_id: movie.movie_id,
-          rank,
-        });
-        await onRefresh();
-      } catch (err) {
-        // error visible in SDK log panel
-      }
-    });
+    if (filtered.length === 0 || filtered[filtered.length - 1].movie_id === movie.movie_id) return;
+    const rank = generateKeyBetween(filtered[filtered.length - 1].rank, null);
+    try {
+      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+        movie_id: movie.movie_id,
+        rank,
+      });
+      await onRefresh();
+    } catch (err) {
+      // error visible in SDK log panel
+    }
   };
+
+  // --- Edit ---
 
   const handleStartEdit = (movie) => {
     setEditing(movie.movie_id);
@@ -200,7 +213,6 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
         director: form.director,
       };
 
-      // If status changed, compute a new rank for the target list
       const currentMovie = movies.find((m) => m.movie_id === editing);
       if (currentMovie && form.status !== currentMovie.status) {
         const targetList = movies
@@ -230,6 +242,8 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     setForm(emptyForm);
   };
 
+  // --- Search ---
+
   const isSearching = searchQuery.trim().length > 0;
   const searchResults = isSearching
     ? (() => {
@@ -250,6 +264,21 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     : null;
 
   const formValid = form.title && form.year && form.genre && form.rating && form.director;
+
+  // Find the currently dragged movie for DragOverlay
+  const activeMovie = activeId ? filtered.find((m) => m.movie_id === activeId) : null;
+  const activeIndex = activeMovie ? filtered.indexOf(activeMovie) : -1;
+
+  const movieRowProps = (movie, index, list) => ({
+    movie,
+    displayOrder: index + 1,
+    isFirst: index === 0,
+    isLast: index === list.length - 1,
+    onStatusChange: handleStatusChange,
+    onMoveToTop: () => handleMoveToTop(movie),
+    onMoveToBottom: () => handleMoveToBottom(movie),
+    onEdit: () => handleStartEdit(movie),
+  });
 
   return (
     <div className="min-h-screen bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
@@ -343,7 +372,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
         </div>
       </header>
 
-      {/* Add Movie Form */}
+      {/* Add / Edit Movie Form */}
       {showForm && (
         <div className="max-w-3xl mx-auto px-4 pt-6">
           <div className="bg-white rounded-2xl shadow-2xl p-6">
@@ -415,7 +444,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
           <>
             {searchResults.length === 0 && (
               <div className="bg-white rounded-2xl shadow-2xl">
-                <p className="text-gray-400 text-sm py-8 text-center">No movies match "{searchQuery.trim()}".</p>
+                <p className="text-gray-400 text-sm py-8 text-center">No movies match &ldquo;{searchQuery.trim()}&rdquo;.</p>
               </div>
             )}
             {searchResults.map((group) => (
@@ -425,24 +454,10 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
                 </h2>
                 <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
                   {group.movies.map((movie, index) => (
-                    <MovieRow
+                    <MovieRowContent
                       key={movie.movie_id}
-                      ref={(el) => setRowRef(movie.movie_id, el)}
-                      movie={movie}
-                      displayOrder={index + 1}
-                      isFirst={index === 0}
-                      isLast={index === group.movies.length - 1}
-                      onStatusChange={handleStatusChange}
-                      onMoveUp={() => {}}
-                      onMoveDown={() => {}}
-                      onMoveToTop={() => handleMoveToTop(movie)}
-                      onMoveToBottom={() => handleMoveToBottom(movie)}
-                      onEdit={() => handleStartEdit(movie)}
-                      style={
-                        animating && animating[movie.movie_id] !== undefined
-                          ? { transform: `translateY(${animating[movie.movie_id]}px)` }
-                          : undefined
-                      }
+                      {...movieRowProps(movie, index, group.movies)}
+                      dragHandleProps={{}}
                     />
                   ))}
                 </div>
@@ -450,32 +465,40 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
             ))}
           </>
         ) : (
-          <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
-            {filtered.length === 0 && (
-              <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
-            )}
-            {filtered.map((movie, index) => (
-              <MovieRow
-                key={movie.movie_id}
-                ref={(el) => setRowRef(movie.movie_id, el)}
-                movie={movie}
-                displayOrder={index + 1}
-                isFirst={index === 0}
-                isLast={index === filtered.length - 1}
-                onStatusChange={handleStatusChange}
-                onMoveUp={() => handleSwap(index, -1)}
-                onMoveDown={() => handleSwap(index, 1)}
-                onMoveToTop={() => handleMoveToTop(movie)}
-                onMoveToBottom={() => handleMoveToBottom(movie)}
-                onEdit={() => handleStartEdit(movie)}
-                style={
-                  animating && animating[movie.movie_id] !== undefined
-                    ? { transform: `translateY(${animating[movie.movie_id]}px)` }
-                    : undefined
-                }
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SortableContext
+              items={filtered.map((m) => m.movie_id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
+                {filtered.length === 0 && (
+                  <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
+                )}
+                {filtered.map((movie, index) => (
+                  <SortableMovieRow
+                    key={movie.movie_id}
+                    {...movieRowProps(movie, index, filtered)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+
+            <DragOverlay>
+              {activeMovie ? (
+                <MovieRowContent
+                  {...movieRowProps(activeMovie, activeIndex, filtered)}
+                  dragHandleProps={{}}
+                  isOverlay
+                />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </main>
     </div>
