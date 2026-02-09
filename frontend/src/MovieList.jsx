@@ -9,7 +9,7 @@ const lists = [
   { key: 'notInterested', label: 'Not Interested' },
 ];
 
-const emptyForm = { title: '', year: '', genre: '', rating: '', director: '' };
+const emptyForm = { title: '', year: '', genre: '', rating: '', director: '', status: 'active' };
 
 export default function MovieList({ movies, config, credentials, onRefresh, onLogout }) {
   const [activeList, setActiveList] = useState('active');
@@ -38,8 +38,11 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const handleAdd = async () => {
     setSaving(true);
     try {
-      // Compute rank after the last movie in the active list
-      const lastRank = filtered.length > 0 ? filtered[filtered.length - 1].rank : null;
+      // Compute rank after the last movie in the target status list
+      const targetList = movies
+        .filter((m) => m.status === form.status)
+        .sort((a, b) => a.rank.localeCompare(b.rank));
+      const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
       const rank = generateKeyBetween(lastRank, null);
 
       await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
@@ -49,7 +52,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
         genre: form.genre,
         rating: Number(form.rating),
         director: form.director,
-        status: activeList,
+        status: form.status,
       });
 
       setForm(emptyForm);
@@ -59,6 +62,28 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       // error visible in SDK log panel
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (movie, newStatus) => {
+    if (newStatus === movie.status) return;
+    try {
+      // Compute rank at end of the target list
+      const targetList = movies
+        .filter((m) => m.status === newStatus)
+        .sort((a, b) => a.rank.localeCompare(b.rank));
+      const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
+      const rank = generateKeyBetween(lastRank, null);
+
+      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+        movie_id: movie.movie_id,
+        status: newStatus,
+        rank,
+      });
+
+      await onRefresh();
+    } catch (err) {
+      // error visible in SDK log panel
     }
   };
 
@@ -140,9 +165,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       {showForm && (
         <div className="max-w-3xl mx-auto px-4 pt-6">
           <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h2 className="text-lg font-semibold text-black mb-4">
-              Add to {activeLabel}
-            </h2>
+            <h2 className="text-lg font-semibold text-black mb-4">Add Movie</h2>
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
@@ -180,6 +203,15 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
                 onChange={(e) => setForm({ ...form, director: e.target.value })}
                 className="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-black text-sm placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
               />
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-black text-sm focus:outline-none focus:border-black transition-colors"
+              >
+                {lists.map((list) => (
+                  <option key={list.key} value={list.key}>{list.label}</option>
+                ))}
+              </select>
             </div>
             <button
               onClick={handleAdd}
@@ -202,7 +234,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
             <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
           )}
           {filtered.map((movie, index) => (
-            <MovieRow key={movie.rank} movie={movie} displayOrder={index + 1} />
+            <MovieRow key={movie.movie_id} movie={movie} displayOrder={index + 1} onStatusChange={handleStatusChange} />
           ))}
         </div>
       </main>
