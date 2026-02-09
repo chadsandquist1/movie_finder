@@ -10,6 +10,7 @@ export default function Diagnostic() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [moviesJson, setMoviesJson] = useState(null);
   const logEndRef = useRef(null);
 
   useEffect(() => subscribe(setLogs), []);
@@ -50,12 +51,27 @@ export default function Diagnostic() {
     }
   };
 
+  const handleGetMovies = async () => {
+    setLoading(true);
+    setMoviesJson(null);
+    try {
+      const payload = await invokeLambda(config, session.credentials, config.movieqListFunctionName);
+      const parsed = JSON.parse(payload);
+      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      setMoviesJson(JSON.stringify(body, null, 2));
+    } catch (err) {
+      // error already in log panel
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loggedIn = session !== null;
   const ready = config !== null;
 
   if (configError) {
     return (
-      <div className="app">
+      <div className="app min-h-screen bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
         <h1>Movie Finder - Diagnostic</h1>
         <section className="panel">
           <p className="error-text">Failed to load config: {configError}</p>
@@ -67,7 +83,7 @@ export default function Diagnostic() {
 
   if (!ready) {
     return (
-      <div className="app">
+      <div className="app min-h-screen bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
         <h1>Movie Finder - Diagnostic</h1>
         <section className="panel"><p>Loading config...</p></section>
       </div>
@@ -75,7 +91,7 @@ export default function Diagnostic() {
   }
 
   return (
-    <div className="app">
+    <div className="app min-h-screen bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
       <h1>Movie Finder - Diagnostic</h1>
 
       <section className="panel">
@@ -110,11 +126,21 @@ export default function Diagnostic() {
           <button onClick={handleInvoke} disabled={!loggedIn || loading}>
             Invoke Lambda
           </button>
+          <button onClick={handleGetMovies} disabled={!loggedIn || loading}>
+            Get Movies
+          </button>
           <button onClick={clearLogs} disabled={loading}>
             Clear Logs
           </button>
         </div>
       </section>
+
+      {moviesJson && (
+        <section className="panel">
+          <h2>Movies JSON</h2>
+          <pre style={{ maxHeight: '400px', overflow: 'auto', fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{moviesJson}</pre>
+        </section>
+      )}
 
       <section className="panel log-panel">
         <h2>SDK Log</h2>

@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState, useRef, useEffect } from 'react';
 
 const statusLabels = {
   active: 'My List',
@@ -9,9 +9,23 @@ const statusLabels = {
 const statusKeys = Object.keys(statusLabels);
 
 const MovieRow = forwardRef(function MovieRow(
-  { movie, displayOrder, onStatusChange, onMoveUp, onMoveDown, isFirst, isLast, style },
+  { movie, displayOrder, onStatusChange, onMoveUp, onMoveDown, onMoveToTop, onMoveToBottom, onEdit, isFirst, isLast, style },
   ref,
 ) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menuOpen]);
+
   return (
     <div
       ref={ref}
@@ -73,6 +87,47 @@ const MovieRow = forwardRef(function MovieRow(
       <span className="text-sm font-semibold text-black shrink-0">
         {movie.rating}<span className="text-gray-400 font-normal">/10</span>
       </span>
+
+      {/* Kebab menu */}
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+          aria-label="More options"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <circle cx="10" cy="4" r="1.5" />
+            <circle cx="10" cy="10" r="1.5" />
+            <circle cx="10" cy="16" r="1.5" />
+          </svg>
+        </button>
+
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <button
+              onClick={() => { setMenuOpen(false); onMoveToTop?.(); }}
+              disabled={isFirst}
+              className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"
+            >
+              Move to Top
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); onMoveToBottom?.(); }}
+              disabled={isLast}
+              className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"
+            >
+              Move to Bottom
+            </button>
+            <div className="border-t border-gray-100 my-1" />
+            <button
+              onClick={() => { setMenuOpen(false); onEdit?.(); }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors"
+            >
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 });

@@ -9,8 +9,6 @@ const lists = [
   { key: 'notInterested', label: 'Not Interested' },
 ];
 
-const ANIMATION_MS = 250;
-
 const emptyForm = { title: '', year: '', genre: '', rating: '', director: '', status: 'active' };
 
 export default function MovieList({ movies, config, credentials, onRefresh, onLogout }) {
@@ -19,7 +17,9 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [animating, setAnimating] = useState(null); // { id1, id2, offset1, offset2 }
+  const [animating, setAnimating] = useState(null); // { [movie_id]: translateY }
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editing, setEditing] = useState(null); // movie being edited
   const dropdownRef = useRef(null);
   const rowRefs = useRef({});
 
@@ -94,6 +94,8 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
     }
   };
 
+  const ANIM_MS = 250;
+
   const handleSwap = async (index, direction) => {
     if (animating) return;
     const targetIndex = index + direction;
@@ -107,20 +109,15 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
 
     const rectA = elA.getBoundingClientRect();
     const rectB = elB.getBoundingClientRect();
-    const offsetA = rectB.top - rectA.top;
-    const offsetB = rectA.top - rectB.top;
 
-    // Start animation
     setAnimating({
-      [movieA.movie_id]: offsetA,
-      [movieB.movie_id]: offsetB,
+      [movieA.movie_id]: rectB.top - rectA.top,
+      [movieB.movie_id]: rectA.top - rectB.top,
     });
 
-    // After animation, swap ranks and persist
     setTimeout(async () => {
       setAnimating(null);
       try {
-        // Swap ranks: A gets B's rank, B gets A's rank
         await Promise.all([
           invokeLambda(config, credentials, config.movieqWriteFunctionName, {
             movie_id: movieA.movie_id,
@@ -135,8 +132,163 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       } catch (err) {
         // error visible in SDK log panel
       }
-    }, ANIMATION_MS);
+    }, ANIM_MS);
   };
+
+  const handleMoveToTop = async (movie) => {
+    if (animating) return;
+    const list = movies
+      .filter((m) => m.status === movie.status)
+      .sort((a, b) => a.rank.localeCompare(b.rank));
+    if (list.length === 0 || list[0].movie_id === movie.movie_id) return;
+
+    // Animate: moved row slides up, rows above it slide down
+    const movedEl = rowRefs.current[movie.movie_id];
+    const topEl = rowRefs.current[list[0].movie_id];
+    if (!movedEl || !topEl) return;
+
+    const movedRect = movedEl.getBoundingClientRect();
+    const topRect = topEl.getBoundingClientRect();
+    const rowHeight = movedRect.height;
+
+    const offsets = { [movie.movie_id]: topRect.top - movedRect.top };
+    for (const m of list) {
+      if (m.movie_id === movie.movie_id) break;
+      if (rowRefs.current[m.movie_id]) {
+        offsets[m.movie_id] = rowHeight;
+      }
+    }
+    setAnimating(offsets);
+
+    const rank = generateKeyBetween(null, list[0].rank);
+    setTimeout(async () => {
+      setAnimating(null);
+      try {
+        await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+          movie_id: movie.movie_id,
+          rank,
+        });
+        await onRefresh();
+      } catch (err) {
+        // error visible in SDK log panel
+      }
+    }, ANIM_MS);
+  };
+
+  const handleMoveToBottom = async (movie) => {
+    if (animating) return;
+    const list = movies
+      .filter((m) => m.status === movie.status)
+      .sort((a, b) => a.rank.localeCompare(b.rank));
+    if (list.length === 0 || list[list.length - 1].movie_id === movie.movie_id) return;
+
+    // Animate: moved row slides down, rows below it slide up
+    const movedEl = rowRefs.current[movie.movie_id];
+    const bottomEl = rowRefs.current[list[list.length - 1].movie_id];
+    if (!movedEl || !bottomEl) return;
+
+    const movedRect = movedEl.getBoundingClientRect();
+    const bottomRect = bottomEl.getBoundingClientRect();
+    const rowHeight = movedRect.height;
+
+    const offsets = { [movie.movie_id]: bottomRect.top - movedRect.top };
+    let pastMoved = false;
+    for (const m of list) {
+      if (m.movie_id === movie.movie_id) { pastMoved = true; continue; }
+      if (pastMoved && rowRefs.current[m.movie_id]) {
+        offsets[m.movie_id] = -rowHeight;
+      }
+    }
+    setAnimating(offsets);
+
+    const rank = generateKeyBetween(list[list.length - 1].rank, null);
+    setTimeout(async () => {
+      setAnimating(null);
+      try {
+        await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
+          movie_id: movie.movie_id,
+          rank,
+        });
+        await onRefresh();
+      } catch (err) {
+        // error visible in SDK log panel
+      }
+    }, ANIM_MS);
+  };
+
+  const handleStartEdit = (movie) => {
+    setEditing(movie.movie_id);
+    setForm({
+      title: movie.title || '',
+      year: movie.year || '',
+      genre: movie.genre || '',
+      rating: movie.rating || '',
+      director: movie.director || '',
+      status: movie.status || 'active',
+    });
+    setShowForm(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        movie_id: editing,
+        title: form.title,
+        year: Number(form.year),
+        genre: form.genre,
+        rating: Number(form.rating),
+        director: form.director,
+      };
+
+      // If status changed, compute a new rank for the target list
+      const currentMovie = movies.find((m) => m.movie_id === editing);
+      if (currentMovie && form.status !== currentMovie.status) {
+        const targetList = movies
+          .filter((m) => m.status === form.status)
+          .sort((a, b) => a.rank.localeCompare(b.rank));
+        const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
+        payload.status = form.status;
+        payload.rank = generateKeyBetween(lastRank, null);
+      }
+
+      await invokeLambda(config, credentials, config.movieqWriteFunctionName, payload);
+
+      setForm(emptyForm);
+      setShowForm(false);
+      setEditing(null);
+      await onRefresh();
+    } catch (err) {
+      // error visible in SDK log panel
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setForm(emptyForm);
+  };
+
+  const isSearching = searchQuery.trim().length > 0;
+  const searchResults = isSearching
+    ? (() => {
+        const q = searchQuery.trim().toLowerCase();
+        const matched = movies.filter(
+          (m) =>
+            m.title?.toLowerCase().includes(q) ||
+            m.director?.toLowerCase().includes(q) ||
+            m.genre?.toLowerCase().includes(q)
+        );
+        return lists.map((list) => ({
+          ...list,
+          movies: matched
+            .filter((m) => m.status === list.key)
+            .sort((a, b) => a.rank.localeCompare(b.rank)),
+        })).filter((group) => group.movies.length > 0);
+      })()
+    : null;
 
   const formValid = form.title && form.year && form.genre && form.rating && form.director;
 
@@ -193,8 +345,28 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
           </div>
 
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search movies..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-48 pl-9 pr-3 py-1.5 border border-gray-300 rounded-full bg-gray-50 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
+              />
+            </div>
             <button
-              onClick={() => setShowForm((v) => !v)}
+              onClick={() => {
+                if (showForm) {
+                  handleCancelForm();
+                } else {
+                  setEditing(null);
+                  setForm(emptyForm);
+                  setShowForm(true);
+                }
+              }}
               className="px-4 py-2 rounded-full text-sm font-medium cursor-pointer text-white transition-colors"
               style={{ backgroundColor: '#d2b48c' }}
               onMouseEnter={(e) => (e.target.style.backgroundColor = '#c4a67a')}
@@ -216,7 +388,7 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
       {showForm && (
         <div className="max-w-3xl mx-auto px-4 pt-6">
           <div className="bg-white rounded-2xl shadow-2xl p-6">
-            <h2 className="text-lg font-semibold text-black mb-4">Add Movie</h2>
+            <h2 className="text-lg font-semibold text-black mb-4">{editing ? 'Edit Movie' : 'Add Movie'}</h2>
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
@@ -265,14 +437,14 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
               </select>
             </div>
             <button
-              onClick={handleAdd}
+              onClick={editing ? handleSaveEdit : handleAdd}
               disabled={!formValid || saving}
               className="mt-4 px-6 py-2 rounded-full text-sm font-medium cursor-pointer text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#d2b48c' }}
               onMouseEnter={(e) => !saving && formValid && (e.target.style.backgroundColor = '#c4a67a')}
               onMouseLeave={(e) => (e.target.style.backgroundColor = '#d2b48c')}
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : editing ? 'Update' : 'Save'}
             </button>
           </div>
         </div>
@@ -280,29 +452,60 @@ export default function MovieList({ movies, config, credentials, onRefresh, onLo
 
       {/* Movie List */}
       <main className="max-w-3xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
-          {filtered.length === 0 && (
-            <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
-          )}
-          {filtered.map((movie, index) => (
-            <MovieRow
-              key={movie.movie_id}
-              ref={(el) => setRowRef(movie.movie_id, el)}
-              movie={movie}
-              displayOrder={index + 1}
-              isFirst={index === 0}
-              isLast={index === filtered.length - 1}
-              onStatusChange={handleStatusChange}
-              onMoveUp={() => handleSwap(index, -1)}
-              onMoveDown={() => handleSwap(index, 1)}
-              style={
-                animating && animating[movie.movie_id] !== undefined
-                  ? { transform: `translateY(${animating[movie.movie_id]}px)`, zIndex: 10 }
-                  : undefined
-              }
-            />
-          ))}
-        </div>
+        {isSearching ? (
+          <>
+            {searchResults.length === 0 && (
+              <div className="bg-white rounded-2xl shadow-2xl">
+                <p className="text-gray-400 text-sm py-8 text-center">No movies match "{searchQuery.trim()}".</p>
+              </div>
+            )}
+            {searchResults.map((group) => (
+              <div key={group.key} className="mb-6">
+                <h2 className="text-sm font-semibold text-white/80 uppercase tracking-wide mb-2 px-1">
+                  {group.label} ({group.movies.length})
+                </h2>
+                <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
+                  {group.movies.map((movie, index) => (
+                    <MovieRow
+                      key={movie.movie_id}
+                      movie={movie}
+                      displayOrder={index + 1}
+                      isFirst={index === 0}
+                      isLast={index === group.movies.length - 1}
+                      onStatusChange={handleStatusChange}
+                      onMoveUp={() => {}}
+                      onMoveDown={() => {}}
+                      onMoveToTop={() => handleMoveToTop(movie)}
+                      onMoveToBottom={() => handleMoveToBottom(movie)}
+                      onEdit={() => handleStartEdit(movie)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
+            {filtered.length === 0 && (
+              <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
+            )}
+            {filtered.map((movie, index) => (
+              <MovieRow
+                key={movie.movie_id}
+                movie={movie}
+                displayOrder={index + 1}
+                isFirst={index === 0}
+                isLast={index === filtered.length - 1}
+                onStatusChange={handleStatusChange}
+                onMoveUp={() => handleSwap(index, -1)}
+                onMoveDown={() => handleSwap(index, 1)}
+                onMoveToTop={() => handleMoveToTop(movie)}
+                onMoveToBottom={() => handleMoveToBottom(movie)}
+                onEdit={() => handleStartEdit(movie)}
+              />
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
