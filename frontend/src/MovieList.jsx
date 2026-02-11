@@ -107,8 +107,12 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
     }
   };
 
-  // Catalog pagination
+  // List pagination
   const PAGE_SIZE = 50;
+  const listTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageMovies = filtered.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE);
+
+  // Catalog pagination
   const sortedCatalog = [...catalogMovies].sort((a, b) => (b.year || 0) - (a.year || 0));
   const catalogTotalPages = Math.max(1, Math.ceil(sortedCatalog.length / PAGE_SIZE));
   const catalogPageMovies = sortedCatalog.slice(
@@ -427,21 +431,43 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
             onDragCancel={handleDragCancel}
           >
             <SortableContext
-              items={filtered.map((m) => m.movie_id)}
+              items={pageMovies.map((m) => m.movie_id)}
               strategy={verticalListSortingStrategy}
             >
               <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
                 {filtered.length === 0 && (
                   <p className="text-gray-400 text-sm py-8 text-center">No movies in this list.</p>
                 )}
-                {filtered.map((movie, index) => (
+                {pageMovies.map((movie, pageIndex) => (
                   <SortableMovieRow
                     key={movie.movie_id}
-                    {...movieRowProps(movie, index, filtered)}
+                    {...movieRowProps(movie, listPage * PAGE_SIZE + pageIndex, filtered)}
                   />
                 ))}
               </div>
             </SortableContext>
+
+            {filtered.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-4 mt-4" data-testid="list-pagination">
+                <button
+                  onClick={() => setListPage((p) => Math.max(0, p - 1))}
+                  disabled={listPage === 0}
+                  className="px-3 py-1 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-default cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="text-sm text-white font-medium">
+                  Page {listPage + 1} of {listTotalPages}
+                </span>
+                <button
+                  onClick={() => setListPage((p) => Math.min(listTotalPages - 1, p + 1))}
+                  disabled={listPage >= listTotalPages - 1}
+                  className="px-3 py-1 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-default cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
 
             <DragOverlay>
               {activeMovie ? (

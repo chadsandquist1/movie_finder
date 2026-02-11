@@ -18,11 +18,11 @@ export const CONFIG = {
 };
 
 export const MOVIES = [
-  { movie_id: 'id-1', title: 'The Matrix', year: 1999, genre: 'Sci-Fi', rating: 8.7, director: 'Wachowskis', status: 'active', rank: 'a00' },
-  { movie_id: 'id-2', title: 'Inception', year: 2010, genre: 'Sci-Fi', rating: 8.8, director: 'Christopher Nolan', status: 'active', rank: 'a01' },
-  { movie_id: 'id-3', title: 'Interstellar', year: 2014, genre: 'Sci-Fi', rating: 8.6, director: 'Christopher Nolan', status: 'active', rank: 'a02' },
-  { movie_id: 'id-4', title: 'The Godfather', year: 1972, genre: 'Crime', rating: 9.2, director: 'Francis Ford Coppola', status: 'recentlyWatched', rank: 'a00' },
-  { movie_id: 'id-5', title: 'Pulp Fiction', year: 1994, genre: 'Crime', rating: 8.9, director: 'Quentin Tarantino', status: 'notInterested', rank: 'a00' },
+  { movie_id: 'id-1', title: 'The Matrix', year: 1999, genre: 'Sci-Fi', rating: 8.7, director: 'Wachowskis', status: 'active', rank: 'a0' },
+  { movie_id: 'id-2', title: 'Inception', year: 2010, genre: 'Sci-Fi', rating: 8.8, director: 'Christopher Nolan', status: 'active', rank: 'a1' },
+  { movie_id: 'id-3', title: 'Interstellar', year: 2014, genre: 'Sci-Fi', rating: 8.6, director: 'Christopher Nolan', status: 'active', rank: 'a2' },
+  { movie_id: 'id-4', title: 'The Godfather', year: 1972, genre: 'Crime', rating: 9.2, director: 'Francis Ford Coppola', status: 'recentlyWatched', rank: 'a0' },
+  { movie_id: 'id-5', title: 'Pulp Fiction', year: 1994, genre: 'Crime', rating: 8.9, director: 'Quentin Tarantino', status: 'notInterested', rank: 'a0' },
 ];
 
 export const CATALOG_MOVIES = [
