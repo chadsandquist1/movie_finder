@@ -83,6 +83,27 @@ def lambda_handler(event, context):
     if not username:
         return _response(400, {"error": "username is required"})
 
+    http_method = event.get("requestContext", {}).get("http", {}).get("method", "")
+
+    # DELETE /users/{username}/queue/{movie_id} — remove from queue only
+    if http_method == "DELETE":
+        movie_id = path_params.get("movie_id")
+        if not movie_id:
+            return _response(400, {"error": "movie_id is required"})
+
+        # Find the queue entry's sk by querying for this user and filtering by movie_id
+        resp = queue_table.query(
+            KeyConditionExpression="username = :u",
+            FilterExpression="movie_id = :m",
+            ExpressionAttributeValues={":u": username, ":m": movie_id},
+        )
+        items = resp.get("Items", [])
+        if not items:
+            return _response(404, {"error": "Movie not found in queue"})
+
+        queue_table.delete_item(Key={"username": username, "sk": items[0]["sk"]})
+        return _response(200, {"message": "Movie removed from list"})
+
     raw_body = event.get("body")
     body = json.loads(raw_body) if isinstance(raw_body, str) else (raw_body or {})
 

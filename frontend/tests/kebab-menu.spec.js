@@ -37,6 +37,61 @@ test.describe('Kebab menu', () => {
     await expect(page.locator('button:has-text("Move to Top")')).not.toBeVisible();
   });
 
+  test('Remove from List option is visible in kebab menu', async ({ page }) => {
+    const kebabButtons = page.locator('button[aria-label="More options"]');
+    await kebabButtons.first().click();
+    await expect(page.locator('button:has-text("Remove from List")')).toBeVisible();
+  });
+
+  test('Remove from List sends DELETE and removes movie from UI', async ({ page }) => {
+    let deleteCalled = false;
+    let deletePath = null;
+
+    await page.unroute(`${API_BASE_URL}/**`);
+    await page.route(`${API_BASE_URL}/**`, async (route) => {
+      const url = route.request().url();
+      const method = route.request().method();
+      const path = url.replace(API_BASE_URL, '');
+
+      if (method === 'DELETE' && /^\/users\/[^/]+\/queue\/[^/]+$/.test(path)) {
+        deleteCalled = true;
+        deletePath = path;
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Movie removed from list' }),
+        });
+      }
+
+      if (method === 'GET' && /^\/users\/[^/]+\/queue$/.test(path)) {
+        const moviesAfterDelete = deleteCalled
+          ? MOVIES.filter((m) => m.movie_id !== 'id-1')
+          : MOVIES;
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ movies: moviesAfterDelete }),
+        });
+      }
+
+      return route.fulfill({ status: 200, body: '{}' });
+    });
+
+    // Click kebab on the 1st movie (The Matrix)
+    const kebabButtons = page.locator('button[aria-label="More options"]');
+    await kebabButtons.first().click();
+
+    // Click "Remove from List"
+    await page.locator('button:has-text("Remove from List")').click();
+
+    // Wait for The Matrix to disappear
+    await expect(page.locator('text=The Matrix')).not.toBeVisible({ timeout: 5000 });
+
+    // Verify DELETE was called
+    expect(deleteCalled).toBe(true);
+    expect(deletePath).toContain('/queue/id-1');
+  });
+
   test('Move to Top changes display order to 1', async ({ page }) => {
     let putBody = null;
     let putDone = false;

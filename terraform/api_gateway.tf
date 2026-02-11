@@ -6,7 +6,7 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins = ["*"]
-    allow_methods = ["GET", "POST", "PUT", "OPTIONS"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     allow_headers = ["Content-Type", "Authorization"]
     max_age       = 3600
   }
@@ -91,6 +91,14 @@ resource "aws_apigatewayv2_route" "post_queue" {
 resource "aws_apigatewayv2_route" "put_queue_movie" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "PUT /users/{username}/queue/{movie_id}"
+  target             = "integrations/${aws_apigatewayv2_integration.movieq_write.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_route" "delete_queue_movie" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "DELETE /users/{username}/queue/{movie_id}"
   target             = "integrations/${aws_apigatewayv2_integration.movieq_write.id}"
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id

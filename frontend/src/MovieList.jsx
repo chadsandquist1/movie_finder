@@ -315,6 +315,17 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
     }
   };
 
+  // --- Remove from list ---
+
+  const handleRemoveFromList = async (movie) => {
+    try {
+      await apiCall(config.apiBaseUrl, idToken, 'DELETE', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(movie.movie_id)}`);
+      await onRefresh();
+    } catch (err) {
+      // error visible in console
+    }
+  };
+
   // --- Search ---
 
   const isSearching = searchQuery.trim().length > 0;
@@ -349,6 +360,7 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
     onMoveToTop: () => handleMoveToTop(movie),
     onMoveToBottom: () => handleMoveToBottom(movie),
     onEdit: () => handleStartEdit(movie),
+    onRemoveFromList: () => handleRemoveFromList(movie),
   });
 
   return (

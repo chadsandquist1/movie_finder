@@ -14,7 +14,7 @@ const statusKeys = Object.keys(statusLabels);
  * Presentational movie row content — used by both SortableMovieRow and DragOverlay.
  */
 export function MovieRowContent({
-  movie, displayOrder, onStatusChange, onMoveToTop, onMoveToBottom, onEdit,
+  movie, displayOrder, onStatusChange, onMoveToTop, onMoveToBottom, onEdit, onRemoveFromList,
   isFirst, isLast, dragHandleProps, isDragging, isOverlay,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -121,6 +121,13 @@ export function MovieRowContent({
               className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors"
             >
               Edit
+            </button>
+            <div className="border-t border-gray-100 my-1" />
+            <button
+              onClick={() => { setMenuOpen(false); onRemoveFromList?.(); }}
+              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
+            >
+              Remove from List
             </button>
           </div>
         )}

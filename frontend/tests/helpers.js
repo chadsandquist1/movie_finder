@@ -119,6 +119,16 @@ export async function setupMocks(page) {
       });
     }
 
+    // DELETE /users/{username}/queue/{movie_id} → movieq_write (remove from list)
+    if (method === 'DELETE' && /^\/users\/[^/]+\/queue\/[^/]+$/.test(path)) {
+      writeCalls.push({ _method: 'DELETE', path });
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Movie removed from list' }),
+      });
+    }
+
     // GET /movies → movieq_catalog
     if (method === 'GET' && path === '/movies') {
       return route.fulfill({
