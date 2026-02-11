@@ -43,9 +43,34 @@ output "movieq_write_function_arn" {
   value       = aws_lambda_function.movieq_write.arn
 }
 
+output "movieq_refresh_function_name" {
+  description = "movieq_refresh Lambda function name"
+  value       = aws_lambda_function.movieq_refresh.function_name
+}
+
+output "movieq_refresh_function_arn" {
+  description = "movieq_refresh Lambda function ARN"
+  value       = aws_lambda_function.movieq_refresh.arn
+}
+
 output "dynamodb_table_name" {
   description = "DynamoDB movies table name"
   value       = aws_dynamodb_table.movies.name
+}
+
+output "queue_table_name" {
+  description = "DynamoDB queue table name"
+  value       = aws_dynamodb_table.queue.name
+}
+
+output "movieq_catalog_function_name" {
+  description = "movieq_catalog Lambda function name"
+  value       = aws_lambda_function.movieq_catalog.function_name
+}
+
+output "movieq_catalog_function_arn" {
+  description = "movieq_catalog Lambda function ARN"
+  value       = aws_lambda_function.movieq_catalog.arn
 }
 
 output "aws_region" {

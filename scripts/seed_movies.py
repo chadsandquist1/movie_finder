@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Seed the DynamoDB movies table with 300 movies.
+"""Seed the DynamoDB movies and queue tables with 366 movies.
 
 Usage:
-    python scripts/seed_movies.py                          # uses default table name
-    python scripts/seed_movies.py --table my-table-name    # explicit table name
+    python scripts/seed_movies.py                          # uses default table names
+    python scripts/seed_movies.py --table my-table-name    # explicit movies table name
+    python scripts/seed_movies.py --queue-table my-queue   # explicit queue table name
+    python scripts/seed_movies.py --username chad          # queue owner (default: chad)
     python scripts/seed_movies.py --region us-west-2       # explicit region
 """
 
@@ -13,12 +15,13 @@ import random
 import subprocess
 import sys
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import boto3
 
 # ---------------------------------------------------------------------------
-# 300 movies: (title, year, genre, rating, director)
+# 366 movies: (title, year, genre, rating, director)
 # ---------------------------------------------------------------------------
 MOVIES = [
     # 2020s
@@ -408,11 +411,11 @@ def rank_for_index(i):
     return f"a{d1}{d2}"
 
 
-def get_table_name():
-    """Try to read the table name from terraform output."""
+def get_table_name(output_name):
+    """Try to read a table name from terraform output."""
     try:
         result = subprocess.run(
-            ["terraform", "output", "-raw", "dynamodb_table_name"],
+            ["terraform", "output", "-raw", output_name],
             capture_output=True,
             text=True,
             cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent / "terraform"),
@@ -421,20 +424,26 @@ def get_table_name():
             return result.stdout.strip()
     except FileNotFoundError:
         pass
-    return "movie-finder-dev-movies"
+    return None
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed DynamoDB movies table")
-    parser.add_argument("--table", help="DynamoDB table name")
+    parser = argparse.ArgumentParser(description="Seed DynamoDB movies and queue tables")
+    parser.add_argument("--table", help="DynamoDB movies table name")
+    parser.add_argument("--queue-table", help="DynamoDB queue table name")
+    parser.add_argument("--username", default="chad", help="Queue owner username (default: chad)")
     parser.add_argument("--region", default="us-east-1", help="AWS region")
     args = parser.parse_args()
 
-    table_name = args.table or get_table_name()
-    print(f"Seeding table: {table_name} in {args.region}")
+    movies_table_name = args.table or get_table_name("dynamodb_table_name") or "movie-finder-dev-movies"
+    queue_table_name = args.queue_table or get_table_name("queue_table_name") or "movie-finder-dev-queue"
+    print(f"Seeding movies table: {movies_table_name}")
+    print(f"Seeding queue table: {queue_table_name} (username: {args.username})")
+    print(f"Region: {args.region}")
 
     dynamodb = boto3.resource("dynamodb", region_name=args.region)
-    table = dynamodb.Table(table_name)
+    movies_table = dynamodb.Table(movies_table_name)
+    queue_table = dynamodb.Table(queue_table_name)
 
     # Shuffle and assign random statuses
     random.seed(42)  # reproducible
@@ -457,25 +466,41 @@ def main():
     for movie, status in zip(shuffled, status_assignments):
         groups[status].append(movie)
 
+    now_iso = datetime.now(timezone.utc).isoformat()
     written = 0
-    with table.batch_writer() as batch:
+
+    # Write to both tables
+    with movies_table.batch_writer() as movie_batch, queue_table.batch_writer() as queue_batch:
         for status, movie_list in groups.items():
             for i, (title, year, genre, rating, director) in enumerate(movie_list):
-                batch.put_item(Item={
-                    "movie_id": str(uuid.uuid4()),
-                    "status": status,
-                    "rank": rank_for_index(i),
+                movie_id = str(uuid.uuid4())
+                rank = rank_for_index(i)
+
+                # Movies table (shared catalog, no status/rank)
+                movie_batch.put_item(Item={
+                    "movie_id": movie_id,
                     "title": title,
                     "year": year,
                     "genre": genre,
                     "rating": Decimal(str(rating)),
                     "director": director,
+                    "importedFrom": "bulkload",
+                    "importedDate": now_iso,
                 })
+
+                # Queue table (per-user queue)
+                sk = f"{status}#{rank}"
+                queue_batch.put_item(Item={
+                    "username": args.username,
+                    "sk": sk,
+                    "movie_id": movie_id,
+                })
+
                 written += 1
 
     for status in STATUSES:
         print(f"  {status}: {len(groups[status])} movies")
-    print(f"Done! Wrote {written} movies total.")
+    print(f"Done! Wrote {written} movies to both tables.")
 
 
 if __name__ == "__main__":

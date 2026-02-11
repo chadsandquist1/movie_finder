@@ -3,6 +3,10 @@
 resource "aws_cognito_user_pool" "main" {
   name = "${local.name_prefix}-user-pool"
 
+  username_configuration {
+    case_sensitive = false
+  }
+
   password_policy {
     minimum_length                   = 8
     require_lowercase                = false

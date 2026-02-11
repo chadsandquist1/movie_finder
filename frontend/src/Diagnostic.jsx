@@ -55,7 +55,22 @@ export default function Diagnostic() {
     setLoading(true);
     setMoviesJson(null);
     try {
-      const payload = await invokeLambda(config, session.credentials, config.movieqListFunctionName);
+      const payload = await invokeLambda(config, session.credentials, config.movieqListFunctionName, { username: session.username });
+      const parsed = JSON.parse(payload);
+      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      setMoviesJson(JSON.stringify(body, null, 2));
+    } catch (err) {
+      // error already in log panel
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGetCatalog = async () => {
+    setLoading(true);
+    setMoviesJson(null);
+    try {
+      const payload = await invokeLambda(config, session.credentials, config.movieqCatalogFunctionName, { username: session.username });
       const parsed = JSON.parse(payload);
       const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
       setMoviesJson(JSON.stringify(body, null, 2));
@@ -127,7 +142,10 @@ export default function Diagnostic() {
             Invoke Lambda
           </button>
           <button onClick={handleGetMovies} disabled={!loggedIn || loading}>
-            Get Movies
+            Get My List
+          </button>
+          <button onClick={handleGetCatalog} disabled={!loggedIn || loading}>
+            Get Catalog
           </button>
           <button onClick={clearLogs} disabled={loading}>
             Clear Logs

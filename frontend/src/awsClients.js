@@ -1,6 +1,7 @@
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
+  RespondToAuthChallengeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import {
   CognitoIdentityClient,
@@ -34,6 +35,15 @@ export async function login(config, username, password) {
     })
   );
 
+  // Handle NEW_PASSWORD_REQUIRED challenge
+  if (authResult.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+    const err = new Error('NEW_PASSWORD_REQUIRED');
+    err.challengeName = 'NEW_PASSWORD_REQUIRED';
+    err.session = authResult.Session;
+    err.username = username;
+    throw err;
+  }
+
   const idToken = authResult.AuthenticationResult.IdToken;
 
   // Step 2: GetId — exchange token for identity
@@ -61,6 +71,55 @@ export async function login(config, username, password) {
 
   return {
     identityId,
+    username,
+    credentials: { accessKeyId: AccessKeyId, secretAccessKey: SecretKey, sessionToken: SessionToken },
+  };
+}
+
+export async function completeNewPassword(config, username, newPassword, session) {
+  const { region, userPoolId, clientId, identityPoolId } = config;
+  const providerKey = `cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+
+  const cognitoProvider = new CognitoIdentityProviderClient({ region });
+  const challengeResult = await loggedSend(
+    cognitoProvider,
+    new RespondToAuthChallengeCommand({
+      ChallengeName: 'NEW_PASSWORD_REQUIRED',
+      ClientId: clientId,
+      Session: session,
+      ChallengeResponses: {
+        USERNAME: username,
+        NEW_PASSWORD: newPassword,
+      },
+    })
+  );
+
+  const idToken = challengeResult.AuthenticationResult.IdToken;
+
+  const cognitoIdentity = new CognitoIdentityClient({ region });
+  const idResult = await loggedSend(
+    cognitoIdentity,
+    new GetIdCommand({
+      IdentityPoolId: identityPoolId,
+      Logins: { [providerKey]: idToken },
+    })
+  );
+
+  const identityId = idResult.IdentityId;
+
+  const credsResult = await loggedSend(
+    cognitoIdentity,
+    new GetCredentialsForIdentityCommand({
+      IdentityId: identityId,
+      Logins: { [providerKey]: idToken },
+    })
+  );
+
+  const { AccessKeyId, SecretKey, SessionToken } = credsResult.Credentials;
+
+  return {
+    identityId,
+    username,
     credentials: { accessKeyId: AccessKeyId, secretAccessKey: SecretKey, sessionToken: SessionToken },
   };
 }

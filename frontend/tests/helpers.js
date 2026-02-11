@@ -15,6 +15,8 @@ export const CONFIG = {
   identityPoolId: 'us-east-1:test-identity-pool',
   movieqListFunctionName: 'movie-finder-dev-movieq-list',
   movieqWriteFunctionName: 'movie-finder-dev-movieq-write',
+  movieqRefreshFunctionName: 'movie-finder-dev-movieq-refresh',
+  movieqCatalogFunctionName: 'movie-finder-dev-movieq-catalog',
 };
 
 export const MOVIES = [
@@ -24,6 +26,25 @@ export const MOVIES = [
   { movie_id: 'id-4', title: 'The Godfather', year: 1972, genre: 'Crime', rating: 9.2, director: 'Francis Ford Coppola', status: 'recentlyWatched', rank: 'a00' },
   { movie_id: 'id-5', title: 'Pulp Fiction', year: 1994, genre: 'Crime', rating: 8.9, director: 'Quentin Tarantino', status: 'notInterested', rank: 'a00' },
 ];
+
+export const CATALOG_MOVIES = [
+  { movie_id: 'id-1', title: 'The Matrix', year: 1999, genre: 'Sci-Fi', rating: 8.7, director: 'Wachowskis', importedDate: '2024-01-01T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-2', title: 'Inception', year: 2010, genre: 'Sci-Fi', rating: 8.8, director: 'Christopher Nolan', importedDate: '2024-01-01T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-3', title: 'Interstellar', year: 2014, genre: 'Sci-Fi', rating: 8.6, director: 'Christopher Nolan', importedDate: '2024-01-01T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-4', title: 'The Godfather', year: 1972, genre: 'Crime', rating: 9.2, director: 'Francis Ford Coppola', importedDate: '2024-01-01T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-5', title: 'Pulp Fiction', year: 1994, genre: 'Crime', rating: 8.9, director: 'Quentin Tarantino', importedDate: '2024-01-01T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-6', title: 'The Dark Knight', year: 2008, genre: 'Action', rating: 9.0, director: 'Christopher Nolan', importedDate: '2024-01-02T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-7', title: 'Fight Club', year: 1999, genre: 'Drama', rating: 8.8, director: 'David Fincher', importedDate: '2024-01-02T00:00:00Z', importedFrom: 'add' },
+  { movie_id: 'id-8', title: 'Parasite', year: 2019, genre: 'Thriller', rating: 8.5, director: 'Bong Joon-ho', importedDate: '2024-01-02T00:00:00Z', importedFrom: 'add' },
+];
+
+export const CATALOG_QUEUED = {
+  'id-1': 'active',
+  'id-2': 'active',
+  'id-3': 'active',
+  'id-4': 'recentlyWatched',
+  'id-5': 'notInterested',
+};
 
 /**
  * Set up all route mocks on a Playwright page.
@@ -95,7 +116,32 @@ export async function setupMocks(page) {
     if (url.includes('movieq-write')) {
       const reqBody = route.request().postData();
       writeCalls.push(reqBody ? JSON.parse(reqBody) : null);
-      const response = { statusCode: 200, body: JSON.stringify({ success: true }) };
+      const response = { statusCode: 200, body: JSON.stringify({ success: true, message: 'Created 1 movies', movie_ids: ['new-id'] }) };
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(response),
+      });
+    }
+
+    // movieq-catalog
+    if (url.includes('movieq-catalog')) {
+      const response = { statusCode: 200, body: JSON.stringify({ movies: CATALOG_MOVIES, queued: CATALOG_QUEUED }) };
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(response),
+      });
+    }
+
+    // movieq-refresh (OMDb fetch-only)
+    if (url.includes('movieq-refresh')) {
+      const refreshMovies = [
+        { imdb_id: 'tt0133093', title: 'The Matrix', year: 1999, genre: 'Sci-Fi', rating: 8.7, director: 'Wachowskis' },
+        { imdb_id: 'tt0111161', title: 'The Shawshank Redemption', year: 1994, genre: 'Drama', rating: 9.3, director: 'Frank Darabont' },
+        { imdb_id: 'tt0068646', title: 'The Godfather Part II', year: 1974, genre: 'Crime', rating: 9.0, director: 'Francis Ford Coppola' },
+      ];
+      const response = { statusCode: 200, body: JSON.stringify({ movies: refreshMovies, errors: [] }) };
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

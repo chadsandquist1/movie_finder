@@ -15,3 +15,9 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+
+variable "omdb_api_key" {
+  description = "OMDb API key for movie data lookups"
+  type        = string
+  default     = "88d87cf4"
+}

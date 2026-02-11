@@ -16,15 +16,15 @@ test.describe('Kebab menu', () => {
     await expect(page.locator('button:has-text("Edit")')).toBeVisible();
   });
 
-  test('Move to Top is disabled on first item', async ({ page }) => {
+  test('Move to Top is disabled on last item', async ({ page }) => {
     const kebabButtons = page.locator('button[aria-label="More options"]');
-    await kebabButtons.first().click();
+    await kebabButtons.nth(2).click(); // 3rd item (last in active list)
     await expect(page.locator('button:has-text("Move to Top")')).toBeDisabled();
   });
 
-  test('Move to Bottom is disabled on last item', async ({ page }) => {
+  test('Move to Bottom is disabled on first item', async ({ page }) => {
     const kebabButtons = page.locator('button[aria-label="More options"]');
-    await kebabButtons.nth(2).click(); // 3rd item (last in active list)
+    await kebabButtons.first().click();
     await expect(page.locator('button:has-text("Move to Bottom")')).toBeDisabled();
   });
 

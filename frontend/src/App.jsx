@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchConfig, login, invokeLambda } from './awsClients';
+import { fetchConfig, login, completeNewPassword, invokeLambda } from './awsClients';
 import { subscribe, clearLogs } from './logger';
 import { cn } from './lib/utils';
 import MovieList from './MovieList';
@@ -12,6 +12,10 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [challenge, setChallenge] = useState(null); // { session, username }
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [challengeError, setChallengeError] = useState('');
   const [logs, setLogs] = useState([]);
   const logEndRef = useRef(null);
 
@@ -26,8 +30,8 @@ export default function App() {
       .catch((err) => setConfigError(err.message));
   }, []);
 
-  const fetchMovies = async (creds) => {
-    const payload = await invokeLambda(config, creds, config.movieqListFunctionName);
+  const fetchMovies = async (creds, user) => {
+    const payload = await invokeLambda(config, creds, config.movieqListFunctionName, { username: user });
     const parsed = JSON.parse(payload);
     const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
     setMovies(body.movies || []);
@@ -38,9 +42,37 @@ export default function App() {
     try {
       const result = await login(config, username, password);
       setSession(result);
-      await fetchMovies(result.credentials);
+      await fetchMovies(result.credentials, result.username);
     } catch (err) {
-      // error already in log panel
+      if (err.challengeName === 'NEW_PASSWORD_REQUIRED') {
+        setChallenge({ session: err.session, username: err.username });
+      }
+      // other errors already in log panel
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewPassword = async () => {
+    if (newPassword !== confirmPassword) {
+      setChallengeError('Passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setChallengeError('Password must be at least 8 characters.');
+      return;
+    }
+    setChallengeError('');
+    setLoading(true);
+    try {
+      const result = await completeNewPassword(config, challenge.username, newPassword, challenge.session);
+      setChallenge(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      setSession(result);
+      await fetchMovies(result.credentials, result.username);
+    } catch (err) {
+      setChallengeError(err.message || 'Failed to set new password.');
     } finally {
       setLoading(false);
     }
@@ -60,7 +92,8 @@ export default function App() {
         movies={movies}
         config={config}
         credentials={session.credentials}
-        onRefresh={() => fetchMovies(session.credentials)}
+        username={session.username}
+        onRefresh={() => fetchMovies(session.credentials, session.username)}
         onLogout={handleLogout}
       />
     );
@@ -88,6 +121,49 @@ export default function App() {
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-1">MojoDojo</h1>
           <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-8">MovieQ</h1>
           <p className="text-gray-400 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (challenge) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat px-4" style={{ backgroundImage: "url('/cinema-background-heavy.jpg')" }}>
+        <div className="bg-white rounded-2xl shadow-2xl p-10 sm:p-14 w-full max-w-xl">
+          <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-1">MojoDojo</h1>
+          <h1 className="text-7xl sm:text-8xl font-serif font-bold tracking-tight text-black leading-none mb-3">MovieQ</h1>
+          <p className="text-gray-500 text-lg mb-10">Set a new password for <strong>{challenge.username}</strong></p>
+
+          <div className="flex flex-col gap-4">
+            <input
+              type="password"
+              placeholder="New Password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-full bg-gray-50 text-black text-sm placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
+            />
+            <input
+              type="password"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !loading && handleNewPassword()}
+              className="w-full px-4 py-3 border border-gray-300 rounded-full bg-gray-50 text-black text-sm placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
+            />
+            {challengeError && (
+              <p className="text-red-600 text-sm">{challengeError}</p>
+            )}
+            <button
+              onClick={handleNewPassword}
+              disabled={loading}
+              className="w-full px-4 py-3 rounded-full text-sm font-medium cursor-pointer text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#d2b48c' }}
+              onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = '#c4a67a')}
+              onMouseLeave={(e) => (e.target.style.backgroundColor = '#d2b48c')}
+            >
+              {loading ? 'Setting password...' : 'Set Password'}
+            </button>
+          </div>
         </div>
       </div>
     );

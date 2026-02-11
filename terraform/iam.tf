@@ -66,6 +66,8 @@ resource "aws_iam_role_policy" "cognito_authenticated_lambda_invoke" {
         Resource = [
           aws_lambda_function.movieq_list.arn,
           aws_lambda_function.movieq_write.arn,
+          aws_lambda_function.movieq_refresh.arn,
+          aws_lambda_function.movieq_catalog.arn,
         ]
       }
     ]
@@ -91,7 +93,10 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           "dynamodb:Scan",
           "dynamodb:Query",
         ]
-        Resource = aws_dynamodb_table.movies.arn
+        Resource = [
+          aws_dynamodb_table.movies.arn,
+          aws_dynamodb_table.queue.arn,
+        ]
       }
     ]
   })
