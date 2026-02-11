@@ -38,15 +38,21 @@ class _DecimalEncoder(json.JSONEncoder):
         return super().default(o)
 
 
+def _response(status_code, body):
+    return {
+        "statusCode": status_code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body) if not isinstance(body, str) else body,
+    }
+
+
 def lambda_handler(event, context):
-    body = event if isinstance(event, dict) else json.loads(event)
+    raw_body = event.get("body")
+    body = json.loads(raw_body) if isinstance(raw_body, str) else (raw_body or event)
     imdb_ids = body.get("imdb_ids", [])
 
     if not imdb_ids:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "imdb_ids list is required"}),
-        }
+        return _response(400, {"error": "imdb_ids list is required"})
 
     movies = []
     errors = []
@@ -78,7 +84,4 @@ def lambda_handler(event, context):
         except (urllib.error.URLError, json.JSONDecodeError) as e:
             errors.append({"imdb_id": imdb_id, "error": str(e)})
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"movies": movies, "errors": errors}, cls=_DecimalEncoder),
-    }
+    return _response(200, json.dumps({"movies": movies, "errors": errors}, cls=_DecimalEncoder))

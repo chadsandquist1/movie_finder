@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { generateKeyBetween } from 'fractional-indexing';
-import { invokeLambda } from './awsClients';
+import { apiCall } from './awsClients';
 import titleSimilarity from './titleSimilarity';
 
 const PAGE_SIZE = 30;
 const CATALOG_PAGE_SIZE = 100;
 
-export default function ImportModal({ isOpen, onClose, movies, config, credentials, username, onImportComplete }) {
+export default function ImportModal({ isOpen, onClose, movies, config, idToken, username, onImportComplete }) {
   const [mode, setMode] = useState('browse'); // browse | manual
   const [step, setStep] = useState('input'); // input | preview | done
   const [imdbInput, setImdbInput] = useState('');
@@ -36,15 +36,13 @@ export default function ImportModal({ isOpen, onClose, movies, config, credentia
   const fetchCatalog = async () => {
     setCatalogLoading(true);
     try {
-      const payload = await invokeLambda(config, credentials, config.movieqCatalogFunctionName, { username });
-      const parsed = JSON.parse(payload);
-      const data = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      const data = await apiCall(config.apiBaseUrl, idToken, 'GET', '/movies');
       setCatalogMovies(data.movies || []);
       setCatalogLoaded(true);
       setCatalogPage(0);
       setCatalogSelected({});
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     } finally {
       setCatalogLoading(false);
     }
@@ -78,13 +76,11 @@ export default function ImportModal({ isOpen, onClose, movies, config, credentia
     setFetching(true);
     setErrors([]);
     try {
-      const payload = await invokeLambda(config, credentials, config.movieqRefreshFunctionName, { imdb_ids: ids });
-      const parsed = JSON.parse(payload);
-      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      const data = await apiCall(config.apiBaseUrl, idToken, 'POST', '/movies/omdb_lookup', { imdb_ids: ids });
 
-      const fetched = body.movies || [];
+      const fetched = data.movies || [];
       setFetchedMovies(fetched);
-      setErrors(body.errors || []);
+      setErrors(data.errors || []);
 
       // Duplicate detection
       const dupeMap = {};
@@ -147,11 +143,9 @@ export default function ImportModal({ isOpen, onClose, movies, config, credentia
         };
       });
 
-      const payload = await invokeLambda(config, credentials, config.movieqWriteFunctionName, { username, movies: moviesToWrite });
-      const parsed = JSON.parse(payload);
-      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      const data = await apiCall(config.apiBaseUrl, idToken, 'POST', `/users/${encodeURIComponent(username)}/queue/batch`, { movies: moviesToWrite });
 
-      setImportResult({ count: selectedMovies.length, message: body.message });
+      setImportResult({ count: selectedMovies.length, message: data.message });
       setStep('done');
     } catch (err) {
       setErrors([{ error: err.message }]);
@@ -189,11 +183,9 @@ export default function ImportModal({ isOpen, onClose, movies, config, credentia
         };
       });
 
-      const payload = await invokeLambda(config, credentials, config.movieqWriteFunctionName, { username, movies: moviesToWrite });
-      const parsed = JSON.parse(payload);
-      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      const data = await apiCall(config.apiBaseUrl, idToken, 'POST', `/users/${encodeURIComponent(username)}/queue/batch`, { movies: moviesToWrite });
 
-      setImportResult({ count: moviesToAdd.length, message: body.message });
+      setImportResult({ count: moviesToAdd.length, message: data.message });
       setMode('browse');
       setStep('done');
     } catch (err) {

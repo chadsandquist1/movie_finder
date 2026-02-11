@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { setupMocks, loginViaUI } from './helpers.js';
+import { setupMocks, loginViaUI, API_BASE_URL } from './helpers.js';
 
 test.describe('Drag and drop reorder', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,20 +27,26 @@ test.describe('Drag and drop reorder', () => {
 
   test('dragging a row triggers write call on drop', async ({ page }) => {
     const writeCalls = [];
-    await page.unroute('https://lambda.us-east-1.amazonaws.com/**');
-    await page.route('https://lambda.us-east-1.amazonaws.com/**', async (route) => {
+    await page.unroute(`${API_BASE_URL}/**`);
+    await page.route(`${API_BASE_URL}/**`, async (route) => {
       const url = route.request().url();
-      if (url.includes('movieq-write')) {
+      const method = route.request().method();
+      const path = url.replace(API_BASE_URL, '');
+      if (method === 'PUT' && /^\/users\/[^/]+\/queue\/[^/]+$/.test(path)) {
         writeCalls.push(true);
       }
       const { MOVIES } = await import('./helpers.js');
-      const response = url.includes('movieq-list')
-        ? { statusCode: 200, body: JSON.stringify({ movies: MOVIES }) }
-        : { statusCode: 200, body: JSON.stringify({ success: true }) };
+      if (method === 'GET' && /^\/users\/[^/]+\/queue$/.test(path)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ movies: MOVIES }),
+        });
+      }
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify({ success: true }),
       });
     });
 

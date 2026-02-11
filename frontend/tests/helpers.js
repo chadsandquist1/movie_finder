@@ -4,19 +4,17 @@
  * Strategy: intercept all network requests that leave the browser —
  *   /config.json          → static config
  *   cognito-idp.*         → fake auth tokens
- *   cognito-identity.*    → fake identity + credentials
- *   lambda.*              → fake Lambda invoke responses
+ *   API Gateway routes    → fake REST API responses
  */
+
+export const API_BASE_URL = 'https://fake-api.execute-api.us-east-1.amazonaws.com/dev';
 
 export const CONFIG = {
   region: 'us-east-1',
   userPoolId: 'us-east-1_testPool',
   clientId: 'testClientId',
   identityPoolId: 'us-east-1:test-identity-pool',
-  movieqListFunctionName: 'movie-finder-dev-movieq-list',
-  movieqWriteFunctionName: 'movie-finder-dev-movieq-write',
-  movieqRefreshFunctionName: 'movie-finder-dev-movieq-refresh',
-  movieqCatalogFunctionName: 'movie-finder-dev-movieq-catalog',
+  apiBaseUrl: API_BASE_URL,
 };
 
 export const MOVIES = [
@@ -48,7 +46,7 @@ export const CATALOG_QUEUED = {
 
 /**
  * Set up all route mocks on a Playwright page.
- * Returns a handle to track Lambda write calls.
+ * Returns a handle to track API write calls.
  */
 export async function setupMocks(page) {
   const writeCalls = [];
@@ -58,7 +56,7 @@ export async function setupMocks(page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CONFIG) })
   );
 
-  // Mock Cognito auth calls (InitiateAuth, GetId, GetCredentialsForIdentity)
+  // Mock Cognito auth calls (InitiateAuth only — no more Identity Pool needed)
   await page.route('https://cognito-idp.us-east-1.amazonaws.com/**', (route) =>
     route.fulfill({
       status: 200,
@@ -73,79 +71,74 @@ export async function setupMocks(page) {
     })
   );
 
-  await page.route('https://cognito-identity.us-east-1.amazonaws.com/**', async (route) => {
-    const body = route.request().postData() || '';
-    if (body.includes('GetId')) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/x-amz-json-1.1',
-        body: JSON.stringify({ IdentityId: 'us-east-1:fake-identity-id' }),
-      });
-    }
-    // GetCredentialsForIdentity
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/x-amz-json-1.1',
-      body: JSON.stringify({
-        IdentityId: 'us-east-1:fake-identity-id',
-        Credentials: {
-          AccessKeyId: 'FAKEKEYID',
-          SecretKey: 'FAKESECRET',
-          SessionToken: 'FAKETOKEN',
-          Expiration: Date.now() / 1000 + 3600,
-        },
-      }),
-    });
-  });
-
-  // Mock Lambda invoke
-  await page.route('https://lambda.us-east-1.amazonaws.com/**', async (route) => {
+  // Mock API Gateway REST endpoints
+  await page.route(`${API_BASE_URL}/**`, async (route) => {
     const url = route.request().url();
+    const method = route.request().method();
+    const path = url.replace(API_BASE_URL, '');
 
-    // movieq-list
-    if (url.includes('movieq-list')) {
-      const response = { statusCode: 200, body: JSON.stringify({ movies: MOVIES }) };
+    // GET /users/{username}/queue → movieq_list
+    if (method === 'GET' && /^\/users\/[^/]+\/queue$/.test(path)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify({ movies: MOVIES }),
       });
     }
 
-    // movieq-write
-    if (url.includes('movieq-write')) {
+    // POST /users/{username}/queue/batch → movieq_write (batch)
+    if (method === 'POST' && /^\/users\/[^/]+\/queue\/batch$/.test(path)) {
       const reqBody = route.request().postData();
       writeCalls.push(reqBody ? JSON.parse(reqBody) : null);
-      const response = { statusCode: 200, body: JSON.stringify({ success: true, message: 'Created 1 movies', movie_ids: ['new-id'] }) };
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify({ success: true, message: 'Created 1 movies', movie_ids: ['new-id'] }),
       });
     }
 
-    // movieq-catalog
-    if (url.includes('movieq-catalog')) {
-      const response = { statusCode: 200, body: JSON.stringify({ movies: CATALOG_MOVIES, queued: CATALOG_QUEUED }) };
+    // POST /users/{username}/queue → movieq_write (single create)
+    if (method === 'POST' && /^\/users\/[^/]+\/queue$/.test(path)) {
+      const reqBody = route.request().postData();
+      writeCalls.push(reqBody ? JSON.parse(reqBody) : null);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify({ success: true, message: 'Movie created', movie_id: 'new-id' }),
       });
     }
 
-    // movieq-refresh (OMDb fetch-only)
-    if (url.includes('movieq-refresh')) {
+    // PUT /users/{username}/queue/{movie_id} → movieq_write (update)
+    if (method === 'PUT' && /^\/users\/[^/]+\/queue\/[^/]+$/.test(path)) {
+      const reqBody = route.request().postData();
+      writeCalls.push(reqBody ? JSON.parse(reqBody) : null);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Movie updated', movie_id: 'updated-id' }),
+      });
+    }
+
+    // GET /movies → movieq_catalog
+    if (method === 'GET' && path === '/movies') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ movies: CATALOG_MOVIES, queued: CATALOG_QUEUED }),
+      });
+    }
+
+    // POST /movies/omdb_lookup → movieq_refresh
+    if (method === 'POST' && path === '/movies/omdb_lookup') {
       const refreshMovies = [
         { imdb_id: 'tt0133093', title: 'The Matrix', year: 1999, genre: 'Sci-Fi', rating: 8.7, director: 'Wachowskis' },
         { imdb_id: 'tt0111161', title: 'The Shawshank Redemption', year: 1994, genre: 'Drama', rating: 9.3, director: 'Frank Darabont' },
         { imdb_id: 'tt0068646', title: 'The Godfather Part II', year: 1974, genre: 'Crime', rating: 9.0, director: 'Francis Ford Coppola' },
       ];
-      const response = { statusCode: 200, body: JSON.stringify({ movies: refreshMovies, errors: [] }) };
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify({ movies: refreshMovies, errors: [] }),
       });
     }
 

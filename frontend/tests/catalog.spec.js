@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { setupMocks, loginViaUI, CATALOG_QUEUED, CONFIG, MOVIES } from './helpers.js';
+import { setupMocks, loginViaUI, CATALOG_QUEUED, CONFIG, MOVIES, API_BASE_URL } from './helpers.js';
 
 test.describe('Catalog view', () => {
   let writeCalls;
@@ -86,34 +86,36 @@ test.describe('Catalog pagination', () => {
       });
     }
 
-    // Use setupMocks for base routes, then override Lambda for custom catalog
+    // Use setupMocks for base routes, then override API Gateway for custom catalog
     await setupMocks(page);
-    // Unroute existing lambda handler so we can override it
-    await page.unroute('https://lambda.us-east-1.amazonaws.com/**');
-    await page.route('https://lambda.us-east-1.amazonaws.com/**', async (route) => {
+    await page.unroute(`${API_BASE_URL}/**`);
+    await page.route(`${API_BASE_URL}/**`, async (route) => {
       const url = route.request().url();
-      if (url.includes('movieq-catalog')) {
-        const response = { statusCode: 200, body: JSON.stringify({ movies: bigCatalog, queued: {} }) };
+      const method = route.request().method();
+      const path = url.replace(API_BASE_URL, '');
+
+      // GET /movies → custom big catalog
+      if (method === 'GET' && path === '/movies') {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(response),
+          body: JSON.stringify({ movies: bigCatalog, queued: {} }),
         });
       }
-      if (url.includes('movieq-list')) {
-        const response = { statusCode: 200, body: JSON.stringify({ movies: MOVIES }) };
+      // GET /users/{username}/queue → movieq_list
+      if (method === 'GET' && /^\/users\/[^/]+\/queue$/.test(path)) {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(response),
+          body: JSON.stringify({ movies: MOVIES }),
         });
       }
-      if (url.includes('movieq-write')) {
-        const response = { statusCode: 200, body: JSON.stringify({ success: true }) };
+      // Write endpoints
+      if (method === 'POST' || method === 'PUT') {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(response),
+          body: JSON.stringify({ success: true }),
         });
       }
       return route.fulfill({ status: 200, body: '{}' });

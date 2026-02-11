@@ -73,6 +73,11 @@ output "movieq_catalog_function_arn" {
   value       = aws_lambda_function.movieq_catalog.arn
 }
 
+output "api_gateway_url" {
+  description = "API Gateway base URL"
+  value       = "${aws_apigatewayv2_api.main.api_endpoint}/${var.environment}"
+}
+
 output "aws_region" {
   description = "AWS region"
   value       = var.aws_region

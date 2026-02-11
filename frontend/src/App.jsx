@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchConfig, login, completeNewPassword, invokeLambda } from './awsClients';
+import { fetchConfig, login, completeNewPassword, apiCall } from './awsClients';
 import { subscribe, clearLogs } from './logger';
 import { cn } from './lib/utils';
 import MovieList from './MovieList';
@@ -30,11 +30,9 @@ export default function App() {
       .catch((err) => setConfigError(err.message));
   }, []);
 
-  const fetchMovies = async (creds, user) => {
-    const payload = await invokeLambda(config, creds, config.movieqListFunctionName, { username: user });
-    const parsed = JSON.parse(payload);
-    const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-    setMovies(body.movies || []);
+  const fetchMovies = async (idToken, user) => {
+    const data = await apiCall(config.apiBaseUrl, idToken, 'GET', `/users/${encodeURIComponent(user)}/queue`);
+    setMovies(data.movies || []);
   };
 
   const handleLogin = async () => {
@@ -42,7 +40,7 @@ export default function App() {
     try {
       const result = await login(config, username, password);
       setSession(result);
-      await fetchMovies(result.credentials, result.username);
+      await fetchMovies(result.idToken, result.username);
     } catch (err) {
       if (err.challengeName === 'NEW_PASSWORD_REQUIRED') {
         setChallenge({ session: err.session, username: err.username });
@@ -70,7 +68,7 @@ export default function App() {
       setNewPassword('');
       setConfirmPassword('');
       setSession(result);
-      await fetchMovies(result.credentials, result.username);
+      await fetchMovies(result.idToken, result.username);
     } catch (err) {
       setChallengeError(err.message || 'Failed to set new password.');
     } finally {
@@ -91,9 +89,9 @@ export default function App() {
       <MovieList
         movies={movies}
         config={config}
-        credentials={session.credentials}
+        idToken={session.idToken}
         username={session.username}
-        onRefresh={() => fetchMovies(session.credentials, session.username)}
+        onRefresh={() => fetchMovies(session.idToken, session.username)}
         onLogout={handleLogout}
       />
     );

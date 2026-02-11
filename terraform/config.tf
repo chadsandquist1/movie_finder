@@ -4,14 +4,11 @@ resource "aws_s3_object" "frontend_config" {
   content_type = "application/json"
 
   content = jsonencode({
-    region                  = var.aws_region
-    userPoolId              = aws_cognito_user_pool.main.id
-    clientId                = aws_cognito_user_pool_client.main.id
-    identityPoolId          = aws_cognito_identity_pool.main.id
-    movieqListFunctionName  = aws_lambda_function.movieq_list.function_name
-    movieqWriteFunctionName   = aws_lambda_function.movieq_write.function_name
-    movieqRefreshFunctionName = aws_lambda_function.movieq_refresh.function_name
-    movieqCatalogFunctionName = aws_lambda_function.movieq_catalog.function_name
+    region         = var.aws_region
+    userPoolId     = aws_cognito_user_pool.main.id
+    clientId       = aws_cognito_user_pool_client.main.id
+    identityPoolId = aws_cognito_identity_pool.main.id
+    apiBaseUrl     = "${aws_apigatewayv2_api.main.api_endpoint}/${var.environment}"
   })
 
   tags = local.common_tags

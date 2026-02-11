@@ -22,19 +22,25 @@ def _convert_decimals(obj):
     return obj
 
 
-def lambda_handler(event, context):
-    body = event.get("body")
-    if isinstance(body, str):
-        body = json.loads(body)
-    if body is None:
-        body = event
+def _response(status_code, body):
+    return {
+        "statusCode": status_code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body),
+    }
 
-    username = body.get("username")
+
+def lambda_handler(event, context):
+    # Extract username from JWT claims (API Gateway v2 authorizer)
+    claims = (
+        event.get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    username = claims.get("cognito:username") or claims.get("sub")
     if not username:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "username is required"}),
-        }
+        return _response(400, {"error": "username is required"})
 
     # Scan full movies catalog
     all_movies = []
@@ -57,9 +63,37 @@ def lambda_handler(event, context):
         status = sk.split("#", 1)[0]
         queued[movie_id] = status
 
-    all_movies = _convert_decimals(all_movies)
+    # Deduplicate movies by (title_lowercase, year)
+    groups = {}
+    for movie in all_movies:
+        title = movie.get("title", "")
+        year = movie.get("year")
+        key = (title.lower().strip(), year)
+        groups.setdefault(key, []).append(movie)
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"movies": all_movies, "queued": queued}),
-    }
+    deduped = []
+    merged_queued = dict(queued)
+    for key, movies in groups.items():
+        if len(movies) == 1:
+            deduped.append(movies[0])
+            continue
+        # Pick canonical: prefer one the user has queued, then earliest importedDate
+        canonical = None
+        for m in movies:
+            if m["movie_id"] in queued:
+                canonical = m
+                break
+        if canonical is None:
+            movies.sort(key=lambda m: m.get("importedDate", ""))
+            canonical = movies[0]
+        deduped.append(canonical)
+        # Map any queued duplicate movie_ids to the canonical one
+        canonical_id = canonical["movie_id"]
+        for m in movies:
+            mid = m["movie_id"]
+            if mid != canonical_id and mid in queued:
+                merged_queued[canonical_id] = merged_queued.pop(mid)
+
+    all_movies = _convert_decimals(deduped)
+
+    return _response(200, {"movies": all_movies, "queued": merged_queued})

@@ -53,27 +53,6 @@ resource "aws_iam_role" "cognito_authenticated" {
   tags = local.common_tags
 }
 
-resource "aws_iam_role_policy" "cognito_authenticated_lambda_invoke" {
-  name = "lambda-invoke"
-  role = aws_iam_role.cognito_authenticated.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "lambda:InvokeFunction"
-        Resource = [
-          aws_lambda_function.movieq_list.arn,
-          aws_lambda_function.movieq_write.arn,
-          aws_lambda_function.movieq_refresh.arn,
-          aws_lambda_function.movieq_catalog.arn,
-        ]
-      }
-    ]
-  })
-}
-
 # --- Lambda DynamoDB Access ---
 
 resource "aws_iam_role_policy" "lambda_dynamodb" {
@@ -87,9 +66,11 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
+          "dynamodb:BatchGetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
+          "dynamodb:BatchWriteItem",
           "dynamodb:Scan",
           "dynamodb:Query",
         ]

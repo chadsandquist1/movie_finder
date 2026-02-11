@@ -30,30 +30,31 @@ npx playwright test     # Run Playwright tests (requires npm install first)
 
 This is an AWS serverless project managed with Terraform. The system provides Cognito-authenticated users the ability to invoke Lambda functions backed by DynamoDB, with a static site hosted on S3.
 
-**Key flow:** Cognito User Pool authenticates users → Cognito Identity Pool federates credentials → Authenticated IAM role grants `lambda:InvokeFunction` permission → Lambda reads/writes DynamoDB (movies table for catalog, queue table for per-user lists). Username from login is passed in every Lambda payload.
+**Key flow:** Cognito User Pool authenticates users → JWT ID token sent in `Authorization: Bearer` header → API Gateway (HTTP API) validates JWT via Cognito authorizer → Routes to Lambda functions → Lambda reads/writes DynamoDB (movies table for catalog, queue table for per-user lists). Username is extracted from path parameters or JWT claims.
 
 ### Infrastructure (`terraform/`)
 
 - **cognito.tf** - User Pool (password auth), Identity Pool (federated credentials), and role attachment for authenticated users
 - **lambda.tf** - Four Python 3.12 Lambda functions (`movieq_list`, `movieq_write`, `movieq_refresh`, `movieq_catalog`), auto-zipped from `lambdas/` source via `archive_file` data source; builds to `.build/` directory. `movieq_list`, `movieq_write`, and `movieq_catalog` receive `TABLE_NAME` and `QUEUE_TABLE_NAME` environment variables; `movieq_refresh` receives only `OMDB_API_KEY` (no DynamoDB access).
-- **iam.tf** - Lambda execution role (basic execution + DynamoDB access to both movies and queue tables) and Cognito authenticated role (scoped to invoke all four Lambdas)
+- **api_gateway.tf** - HTTP API (API Gateway v2) with Cognito JWT authorizer, `dev` stage with auto-deploy, 6 routes mapping to 4 Lambda integrations, and Lambda invoke permissions for API Gateway
+- **iam.tf** - Lambda execution role (basic execution + DynamoDB access to both movies and queue tables) and Cognito authenticated role
 - **dynamodb.tf** - Movies table (shared catalog, PK=`movie_id`) and Queue table (per-user queues, PK=`username`, SK=`sk` where sk=`status#rank`). Status and rank live in the queue table, not the movies table.
 - **s3.tf** - Public S3 bucket configured for static website hosting
-- **config.tf** - Generates `config.json` for the frontend with Cognito IDs and Lambda function names (`movieqListFunctionName`, `movieqWriteFunctionName`, `movieqRefreshFunctionName`, `movieqCatalogFunctionName`)
+- **config.tf** - Generates `config.json` for the frontend with Cognito IDs and `apiBaseUrl` (API Gateway endpoint)
 - **locals.tf** - Naming convention: `{project_name}-{environment}-*` with common tags
-- **outputs.tf** - Exports Cognito IDs, S3 endpoint, Lambda function names/ARNs, DynamoDB table names (movies + queue), region
+- **outputs.tf** - Exports Cognito IDs, S3 endpoint, Lambda function names/ARNs, DynamoDB table names (movies + queue), API Gateway URL, region
 
 ### Lambda Functions (`lambdas/`)
 
-- **movieq_list** (`lambdas/movieq_list/handler.py`) - Accepts `{username}`, queries the queue table for that user's entries, batch-gets movie details from the movies table, merges status/rank from queue with movie data, and returns `{"movies": [...]}`. Each movie has: `movie_id`, `rank`, `title`, `year`, `genre`, `rating`, `director`, `status`, `importedDate`, `importedFrom`.
-- **movieq_write** (`lambdas/movieq_write/handler.py`) - All payloads require `username`. Creates or updates movies across both tables. If `movie_id` is provided, updates movie fields in the movies table and manages queue entries (delete old via `old_sk`, put new with `status#rank`). If omitted, creates a new movie in the movies table and a queue entry. Only `title`, `year`, `status`, and `rank` are required; `genre`, `rating`, and `director` are optional. **Batch mode:** if the payload contains a `movies` array, batch-writes to both tables. Returns `{"message": "Created N movies", "movie_ids": [...]}`.
-- **movieq_refresh** (`lambdas/movieq_refresh/handler.py`) - Fetch-only OMDb proxy. Accepts `{"imdb_ids": ["tt3896198", ...]}`, fetches each from the OMDb API, and returns `{"movies": [{imdb_id, title, year, genre, rating, director}, ...], "errors": [...]}`. No DynamoDB reads or writes — the frontend handles duplicate detection and batch import via `movieq_write`.
-- **movieq_catalog** (`lambdas/movieq_catalog/handler.py`) - Scans the full movies table catalog and queries the user's queue to build a queued status map. Accepts `{username}`, returns `{"movies": [...], "queued": {"movie_id": "status", ...}}`. Used by the "All Movies" catalog view.
+- **movieq_list** (`lambdas/movieq_list/handler.py`) - `GET /users/{username}/queue` — extracts `username` from path parameters, queries the queue table for that user's entries, batch-gets movie details from the movies table, merges status/rank from queue with movie data, and returns `{"movies": [...]}`. Each movie has: `movie_id`, `rank`, `title`, `year`, `genre`, `rating`, `director`, `status`, `importedDate`, `importedFrom`.
+- **movieq_write** (`lambdas/movieq_write/handler.py`) - Handles `POST /users/{username}/queue` (create), `PUT /users/{username}/queue/{movie_id}` (update), and `POST /users/{username}/queue/batch` (batch). Extracts `username` and `movie_id` from path parameters. Creates or updates movies across both tables. If `movie_id` is provided (via path or body), updates movie fields in the movies table and manages queue entries (delete old via `old_sk`, put new with `status#rank`). If omitted, creates a new movie in the movies table and a queue entry. Only `title`, `year`, `status`, and `rank` are required; `genre`, `rating`, and `director` are optional. **Batch mode:** if the body contains a `movies` array, batch-writes to both tables. Returns `{"message": "Created N movies", "movie_ids": [...]}`.
+- **movieq_refresh** (`lambdas/movieq_refresh/handler.py`) - `POST /movies/omdb_lookup` — Fetch-only OMDb proxy. Accepts `{"imdb_ids": ["tt3896198", ...]}` in body, fetches each from the OMDb API, and returns `{"movies": [{imdb_id, title, year, genre, rating, director}, ...], "errors": [...]}`. No DynamoDB reads or writes — the frontend handles duplicate detection and batch import via `movieq_write`.
+- **movieq_catalog** (`lambdas/movieq_catalog/handler.py`) - `GET /movies` — extracts `username` from JWT claims (`cognito:username`), scans the full movies table catalog and queries the user's queue to build a queued status map. Returns `{"movies": [...], "queued": {"movie_id": "status", ...}}`. Used by the "All Movies" catalog view.
 
 ### Frontend (`frontend/`)
 
 - React + Vite + Tailwind CSS
-- `awsClients.js` - Cognito auth flow (returns `username` from login), and `invokeLambda(config, credentials, functionName, payload?)` helper
+- `awsClients.js` - Cognito auth flow (returns `username` + `idToken` from login), and `apiCall(baseUrl, idToken, method, path, body?)` helper using `fetch()` with JWT `Authorization: Bearer` header
 - `App.jsx` - Login flow, calls `movieq_list` on login to fetch movies
 - `MovieList.jsx` - Main orchestrator: state management, all handlers (add, edit, status change, drag-and-drop, move, search), composes child components. Uses `@dnd-kit/core` + `@dnd-kit/sortable` for drag-and-drop reordering
 - `MovieListHeader.jsx` - Header bar: list dropdown selector, search input, Import button, Add Movie/Cancel toggle, Logout button. Hides Import/Add Movie buttons when catalog view is active
@@ -63,15 +64,15 @@ This is an AWS serverless project managed with Terraform. The system provides Co
 - `SearchResults.jsx` - Search results view, groups matched movies by list category
 - `titleSimilarity.js` - Shared utility: LCS-based title similarity ratio (mirrors Python's `difflib.SequenceMatcher`). Used by `MovieForm` for duplicate detection
 - `MovieRow.jsx` - Two exports: `MovieRowContent` (presentational, used by both sortable rows and DragOverlay) and `SortableMovieRow` (default, wraps `useSortable` hook). Drag handle (6-dot grip), kebab menu (Move to Top/Bottom, Edit), status dropdown
-- `Diagnostic.jsx` - Debug page at `/diagnostic/` with Login, Invoke Lambda, Get Movies buttons and SDK log
+- `Diagnostic.jsx` - Debug page at `/diagnostic/` with Login, Invoke API, Get Movies buttons and SDK log
 - Movies use lexicographic `rank` strings (e.g. `"a0"`, `"a1"`) from the `fractional-indexing` pattern for O(1) reordering
 - Drag-and-drop reorder computes new rank via `generateKeyBetween(before, after)` based on new neighbors
 - All pages use the `cinema-background-heavy.jpg` background image
 
 ### Playwright Tests (`frontend/tests/`)
 
-- Tests run against local Vite dev server (port 8080) with **all AWS calls mocked** (Cognito, Lambda)
-- Mock setup in `tests/helpers.js` — intercepts `/config.json`, Cognito auth, and Lambda invoke routes
+- Tests run against local Vite dev server (port 8080) with **all AWS calls mocked** (Cognito, API Gateway)
+- Mock setup in `tests/helpers.js` — intercepts `/config.json`, Cognito auth, and API Gateway REST routes
 - Test files: `login.spec.js`, `movie-list.spec.js`, `search.spec.js`, `add-edit-movie.spec.js`, `kebab-menu.spec.js`, `reorder.spec.js`, `import-modal.spec.js`, `catalog.spec.js`
 - Run: `cd frontend && npx playwright test`
 - First-time setup: `npx playwright install chromium`
@@ -99,6 +100,21 @@ This is an AWS serverless project managed with Terraform. The system provides Co
   python scripts/seed_movies.py --table my-table      # explicit movies table name
   python scripts/seed_movies.py --queue-table my-q    # explicit queue table name
   ```
+
+### REST API (API Gateway)
+
+All Lambda functions are accessed via an HTTP API (API Gateway v2) with Cognito JWT authorization.
+
+**Base URL:** `https://{api_id}.execute-api.{region}.amazonaws.com/dev`
+
+| Method | Path | Lambda | Description |
+|---|---|---|---|
+| `GET` | `/users/{username}/queue` | `movieq_list` | List user's queued movies |
+| `POST` | `/users/{username}/queue` | `movieq_write` | Add a single movie to queue |
+| `PUT` | `/users/{username}/queue/{movie_id}` | `movieq_write` | Update movie/queue entry |
+| `POST` | `/users/{username}/queue/batch` | `movieq_write` | Batch-add movies to queue |
+| `GET` | `/movies` | `movieq_catalog` | Browse full movie catalog (username from JWT) |
+| `POST` | `/movies/omdb_lookup` | `movieq_refresh` | Fetch movie details from OMDb |
 
 ### Resource Naming
 

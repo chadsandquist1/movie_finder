@@ -14,7 +14,7 @@ import {
   verticalListSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { invokeLambda } from './awsClients';
+import { apiCall } from './awsClients';
 import SortableMovieRow, { MovieRowContent } from './MovieRow';
 import MovieListHeader from './MovieListHeader';
 import MovieForm from './MovieForm';
@@ -31,7 +31,7 @@ const lists = [
 
 const emptyForm = { title: '', year: '', genre: '', rating: '', director: '', status: 'active' };
 
-export default function MovieList({ movies, config, credentials, username, onRefresh, onLogout }) {
+export default function MovieList({ movies, config, idToken, username, onRefresh, onLogout }) {
   const [activeList, setActiveList] = useState('active');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -44,6 +44,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
   const [catalogQueued, setCatalogQueued] = useState({});
   const [catalogPage, setCatalogPage] = useState(0);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [listPage, setListPage] = useState(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -59,20 +60,19 @@ export default function MovieList({ movies, config, credentials, username, onRef
   // Fetch catalog when switching to All Movies
   const fetchCatalog = async () => {
     try {
-      const payload = await invokeLambda(config, credentials, config.movieqCatalogFunctionName, { username });
-      const parsed = JSON.parse(payload);
-      const data = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+      const data = await apiCall(config.apiBaseUrl, idToken, 'GET', '/movies');
       setCatalogMovies(data.movies || []);
       setCatalogQueued(data.queued || {});
       setCatalogLoaded(true);
       setCatalogPage(0);
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
   const handleListChange = (key) => {
     setActiveList(key);
+    setListPage(0);
     if (key === 'catalog' && !catalogLoaded) {
       fetchCatalog();
     }
@@ -86,8 +86,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
       const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
       const rank = generateKeyBetween(lastRank, null);
 
-      const payload = {
-        username,
+      const body = {
         movie_id: movie.movie_id,
         title: movie.title,
         year: movie.year,
@@ -96,26 +95,25 @@ export default function MovieList({ movies, config, credentials, username, onRef
         importedFrom: 'catalog',
         importedDate: new Date().toISOString(),
       };
-      if (movie.genre) payload.genre = movie.genre;
-      if (movie.rating) payload.rating = movie.rating;
-      if (movie.director) payload.director = movie.director;
+      if (movie.genre) body.genre = movie.genre;
+      if (movie.rating) body.rating = movie.rating;
+      if (movie.director) body.director = movie.director;
 
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, payload);
+      await apiCall(config.apiBaseUrl, idToken, 'POST', `/users/${encodeURIComponent(username)}/queue`, body);
       await onRefresh();
-      // Update catalog queued map
       setCatalogQueued((prev) => ({ ...prev, [movie.movie_id]: targetStatus }));
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
   // Catalog pagination
-  const CATALOG_PAGE_SIZE = 50;
+  const PAGE_SIZE = 50;
   const sortedCatalog = [...catalogMovies].sort((a, b) => (b.year || 0) - (a.year || 0));
-  const catalogTotalPages = Math.max(1, Math.ceil(sortedCatalog.length / CATALOG_PAGE_SIZE));
+  const catalogTotalPages = Math.max(1, Math.ceil(sortedCatalog.length / PAGE_SIZE));
   const catalogPageMovies = sortedCatalog.slice(
-    catalogPage * CATALOG_PAGE_SIZE,
-    (catalogPage + 1) * CATALOG_PAGE_SIZE
+    catalogPage * PAGE_SIZE,
+    (catalogPage + 1) * PAGE_SIZE
   );
 
   // --- Add / Edit ---
@@ -129,24 +127,23 @@ export default function MovieList({ movies, config, credentials, username, onRef
       const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
       const rank = generateKeyBetween(lastRank, null);
 
-      const payload = {
-        username,
+      const body = {
         rank,
         title: form.title,
         year: Number(form.year),
         status: form.status,
       };
-      if (form.genre) payload.genre = form.genre;
-      if (form.rating) payload.rating = Number(form.rating);
-      if (form.director) payload.director = form.director;
+      if (form.genre) body.genre = form.genre;
+      if (form.rating) body.rating = Number(form.rating);
+      if (form.director) body.director = form.director;
 
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, payload);
+      await apiCall(config.apiBaseUrl, idToken, 'POST', `/users/${encodeURIComponent(username)}/queue`, body);
 
       setForm(emptyForm);
       setShowForm(false);
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     } finally {
       setSaving(false);
     }
@@ -156,9 +153,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
     setSaving(true);
     try {
       const currentMovie = movies.find((m) => m.movie_id === editing);
-      const payload = {
-        username,
-        movie_id: editing,
+      const body = {
         title: form.title,
         year: Number(form.year),
         genre: form.genre,
@@ -172,18 +167,18 @@ export default function MovieList({ movies, config, credentials, username, onRef
           .filter((m) => m.status === form.status)
           .sort((a, b) => a.rank.localeCompare(b.rank));
         const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
-        payload.status = form.status;
-        payload.rank = generateKeyBetween(lastRank, null);
+        body.status = form.status;
+        body.rank = generateKeyBetween(lastRank, null);
       }
 
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, payload);
+      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(editing)}`, body);
 
       setForm(emptyForm);
       setShowForm(false);
       setEditing(null);
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     } finally {
       setSaving(false);
     }
@@ -229,9 +224,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
       const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
       const rank = generateKeyBetween(lastRank, null);
 
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-        username,
-        movie_id: movie.movie_id,
+      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(movie.movie_id)}`, {
         status: newStatus,
         rank,
         old_sk: `${movie.status}#${movie.rank}`,
@@ -239,7 +232,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
 
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
@@ -274,15 +267,13 @@ export default function MovieList({ movies, config, credentials, username, onRef
 
     try {
       const draggedMovie = filtered.find((m) => m.movie_id === active.id);
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-        username,
-        movie_id: active.id,
+      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(active.id)}`, {
         rank: newRank,
         old_sk: `${draggedMovie.status}#${draggedMovie.rank}`,
       });
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
@@ -296,15 +287,13 @@ export default function MovieList({ movies, config, credentials, username, onRef
     if (filtered.length === 0 || filtered[0].movie_id === movie.movie_id) return;
     const rank = generateKeyBetween(null, filtered[0].rank);
     try {
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-        username,
-        movie_id: movie.movie_id,
+      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(movie.movie_id)}`, {
         rank,
         old_sk: `${movie.status}#${movie.rank}`,
       });
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
@@ -312,15 +301,13 @@ export default function MovieList({ movies, config, credentials, username, onRef
     if (filtered.length === 0 || filtered[filtered.length - 1].movie_id === movie.movie_id) return;
     const rank = generateKeyBetween(filtered[filtered.length - 1].rank, null);
     try {
-      await invokeLambda(config, credentials, config.movieqWriteFunctionName, {
-        username,
-        movie_id: movie.movie_id,
+      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(movie.movie_id)}`, {
         rank,
         old_sk: `${movie.status}#${movie.rank}`,
       });
       await onRefresh();
     } catch (err) {
-      // error visible in SDK log panel
+      // error visible in console
     }
   };
 
@@ -352,11 +339,11 @@ export default function MovieList({ movies, config, credentials, username, onRef
   const movieRowProps = (movie, index, list) => ({
     movie,
     displayOrder: index + 1,
-    isFirst: index === list.length - 1,
-    isLast: index === 0,
+    isFirst: index === 0,
+    isLast: index === list.length - 1,
     onStatusChange: handleStatusChange,
-    onMoveToTop: () => handleMoveToBottom(movie),
-    onMoveToBottom: () => handleMoveToTop(movie),
+    onMoveToTop: () => handleMoveToTop(movie),
+    onMoveToBottom: () => handleMoveToBottom(movie),
     onEdit: () => handleStartEdit(movie),
   });
 
@@ -409,7 +396,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
                 />
               ))}
             </div>
-            {sortedCatalog.length > CATALOG_PAGE_SIZE && (
+            {sortedCatalog.length > PAGE_SIZE && (
               <div className="flex items-center justify-center gap-4 mt-4" data-testid="catalog-pagination">
                 <button
                   onClick={() => setCatalogPage((p) => Math.max(0, p - 1))}
@@ -474,7 +461,7 @@ export default function MovieList({ movies, config, credentials, username, onRef
         onClose={() => setShowImportModal(false)}
         movies={movies}
         config={config}
-        credentials={credentials}
+        idToken={idToken}
         username={username}
         onImportComplete={onRefresh}
       />

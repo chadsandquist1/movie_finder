@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchConfig, login, invokeLambda } from './awsClients';
+import { fetchConfig, login, apiCall } from './awsClients';
 import { subscribe, clearLogs } from './logger';
 
 export default function Diagnostic() {
@@ -43,7 +43,7 @@ export default function Diagnostic() {
   const handleInvoke = async () => {
     setLoading(true);
     try {
-      await invokeLambda(config, session.credentials);
+      await apiCall(config.apiBaseUrl, session.idToken, 'GET', `/users/${encodeURIComponent(session.username)}/queue`);
     } catch (err) {
       // error already in log panel
     } finally {
@@ -55,10 +55,8 @@ export default function Diagnostic() {
     setLoading(true);
     setMoviesJson(null);
     try {
-      const payload = await invokeLambda(config, session.credentials, config.movieqListFunctionName, { username: session.username });
-      const parsed = JSON.parse(payload);
-      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-      setMoviesJson(JSON.stringify(body, null, 2));
+      const data = await apiCall(config.apiBaseUrl, session.idToken, 'GET', `/users/${encodeURIComponent(session.username)}/queue`);
+      setMoviesJson(JSON.stringify(data, null, 2));
     } catch (err) {
       // error already in log panel
     } finally {
@@ -70,10 +68,8 @@ export default function Diagnostic() {
     setLoading(true);
     setMoviesJson(null);
     try {
-      const payload = await invokeLambda(config, session.credentials, config.movieqCatalogFunctionName, { username: session.username });
-      const parsed = JSON.parse(payload);
-      const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-      setMoviesJson(JSON.stringify(body, null, 2));
+      const data = await apiCall(config.apiBaseUrl, session.idToken, 'GET', '/movies');
+      setMoviesJson(JSON.stringify(data, null, 2));
     } catch (err) {
       // error already in log panel
     } finally {
@@ -139,7 +135,7 @@ export default function Diagnostic() {
             Logout
           </button>
           <button onClick={handleInvoke} disabled={!loggedIn || loading}>
-            Invoke Lambda
+            Invoke API
           </button>
           <button onClick={handleGetMovies} disabled={!loggedIn || loading}>
             Get My List

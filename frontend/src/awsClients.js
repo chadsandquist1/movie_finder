@@ -3,12 +3,6 @@ import {
   InitiateAuthCommand,
   RespondToAuthChallengeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import {
-  CognitoIdentityClient,
-  GetIdCommand,
-  GetCredentialsForIdentityCommand,
-} from '@aws-sdk/client-cognito-identity';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { loggedSend } from './logger';
 
 export async function fetchConfig() {
@@ -18,8 +12,7 @@ export async function fetchConfig() {
 }
 
 export async function login(config, username, password) {
-  const { region, userPoolId, clientId, identityPoolId } = config;
-  const providerKey = `cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+  const { region, userPoolId, clientId } = config;
 
   // Step 1: InitiateAuth — get tokens
   const cognitoProvider = new CognitoIdentityProviderClient({ region });
@@ -46,39 +39,14 @@ export async function login(config, username, password) {
 
   const idToken = authResult.AuthenticationResult.IdToken;
 
-  // Step 2: GetId — exchange token for identity
-  const cognitoIdentity = new CognitoIdentityClient({ region });
-  const idResult = await loggedSend(
-    cognitoIdentity,
-    new GetIdCommand({
-      IdentityPoolId: identityPoolId,
-      Logins: { [providerKey]: idToken },
-    })
-  );
-
-  const identityId = idResult.IdentityId;
-
-  // Step 3: GetCredentialsForIdentity — get temp AWS creds
-  const credsResult = await loggedSend(
-    cognitoIdentity,
-    new GetCredentialsForIdentityCommand({
-      IdentityId: identityId,
-      Logins: { [providerKey]: idToken },
-    })
-  );
-
-  const { AccessKeyId, SecretKey, SessionToken } = credsResult.Credentials;
-
   return {
-    identityId,
     username,
-    credentials: { accessKeyId: AccessKeyId, secretAccessKey: SecretKey, sessionToken: SessionToken },
+    idToken,
   };
 }
 
 export async function completeNewPassword(config, username, newPassword, session) {
-  const { region, userPoolId, clientId, identityPoolId } = config;
-  const providerKey = `cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+  const { region, clientId } = config;
 
   const cognitoProvider = new CognitoIdentityProviderClient({ region });
   const challengeResult = await loggedSend(
@@ -96,50 +64,28 @@ export async function completeNewPassword(config, username, newPassword, session
 
   const idToken = challengeResult.AuthenticationResult.IdToken;
 
-  const cognitoIdentity = new CognitoIdentityClient({ region });
-  const idResult = await loggedSend(
-    cognitoIdentity,
-    new GetIdCommand({
-      IdentityPoolId: identityPoolId,
-      Logins: { [providerKey]: idToken },
-    })
-  );
-
-  const identityId = idResult.IdentityId;
-
-  const credsResult = await loggedSend(
-    cognitoIdentity,
-    new GetCredentialsForIdentityCommand({
-      IdentityId: identityId,
-      Logins: { [providerKey]: idToken },
-    })
-  );
-
-  const { AccessKeyId, SecretKey, SessionToken } = credsResult.Credentials;
-
   return {
-    identityId,
     username,
-    credentials: { accessKeyId: AccessKeyId, secretAccessKey: SecretKey, sessionToken: SessionToken },
+    idToken,
   };
 }
 
-export async function invokeLambda(config, credentials, functionName, payload) {
-  const lambdaClient = new LambdaClient({
-    region: config.region,
-    credentials,
-  });
-
-  const params = { FunctionName: functionName };
-  if (payload !== undefined) {
-    params.Payload = new TextEncoder().encode(JSON.stringify(payload));
+export async function apiCall(baseUrl, idToken, method, path, body) {
+  const url = `${baseUrl}${path}`;
+  const options = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body !== undefined) {
+    options.body = JSON.stringify(body);
   }
-
-  const result = await loggedSend(
-    lambdaClient,
-    new InvokeCommand(params)
-  );
-
-  const responsePayload = new TextDecoder().decode(result.Payload);
-  return responsePayload;
+  const res = await fetch(url, options);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return text ? JSON.parse(text) : {};
 }

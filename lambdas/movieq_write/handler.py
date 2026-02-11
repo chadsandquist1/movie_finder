@@ -66,31 +66,32 @@ def _handle_batch_create(movies_list, username):
                 "movie_id": movie_id,
             })
 
+    return _response(200, {"message": f"Created {len(movie_ids)} movies", "movie_ids": movie_ids})
+
+
+def _response(status_code, body):
     return {
-        "statusCode": 200,
-        "body": json.dumps({"message": f"Created {len(movie_ids)} movies", "movie_ids": movie_ids}),
+        "statusCode": status_code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body),
     }
 
 
 def lambda_handler(event, context):
-    body = event.get("body")
-    if isinstance(body, str):
-        body = json.loads(body)
-    if body is None:
-        body = event
-
-    username = body.get("username")
+    path_params = event.get("pathParameters") or {}
+    username = path_params.get("username")
     if not username:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "username is required"}),
-        }
+        return _response(400, {"error": "username is required"})
 
-    # Batch create mode
+    raw_body = event.get("body")
+    body = json.loads(raw_body) if isinstance(raw_body, str) else (raw_body or {})
+
+    # Batch create mode (POST /users/{username}/queue/batch)
     if "movies" in body and isinstance(body["movies"], list):
         return _handle_batch_create(body["movies"], username)
 
-    movie_id = body.get("movie_id")
+    # movie_id from path param (PUT) or body (POST create with existing id)
+    movie_id = path_params.get("movie_id") or body.get("movie_id")
 
     # Update existing movie
     if movie_id:
@@ -151,18 +152,12 @@ def lambda_handler(event, context):
                 "movie_id": movie_id,
             })
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"message": "Movie updated", "movie_id": movie_id}),
-        }
+        return _response(200, {"message": "Movie updated", "movie_id": movie_id})
 
     # Create new movie
     missing = REQUIRED_FIELDS - set(body.keys())
     if missing:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": f"Missing fields: {', '.join(sorted(missing))}"}),
-        }
+        return _response(400, {"error": f"Missing fields: {', '.join(sorted(missing))}"})
 
     movie_id = str(uuid.uuid4())
 
@@ -189,7 +184,4 @@ def lambda_handler(event, context):
         "movie_id": movie_id,
     })
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"message": "Movie created", "movie_id": movie_id}),
-    }
+    return _response(200, {"message": "Movie created", "movie_id": movie_id})

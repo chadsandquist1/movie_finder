@@ -22,19 +22,19 @@ def _convert_decimals(obj):
     return obj
 
 
-def lambda_handler(event, context):
-    body = event.get("body")
-    if isinstance(body, str):
-        body = json.loads(body)
-    if body is None:
-        body = event
+def _response(status_code, body):
+    return {
+        "statusCode": status_code,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body),
+    }
 
-    username = body.get("username")
+
+def lambda_handler(event, context):
+    path_params = event.get("pathParameters") or {}
+    username = path_params.get("username")
     if not username:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "username is required"}),
-        }
+        return _response(400, {"error": "username is required"})
 
     # Query all queue entries for this user
     result = queue_table.query(
@@ -43,10 +43,7 @@ def lambda_handler(event, context):
     queue_items = result.get("Items", [])
 
     if not queue_items:
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"movies": []}),
-        }
+        return _response(200, {"movies": []})
 
     # Collect movie_ids and parse sk (status#rank)
     queue_map = {}  # movie_id -> {status, rank, sk}
@@ -82,7 +79,4 @@ def lambda_handler(event, context):
 
     merged = _convert_decimals(merged)
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"movies": merged}),
-    }
+    return _response(200, {"movies": merged})
