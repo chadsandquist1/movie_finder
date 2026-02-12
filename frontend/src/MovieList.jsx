@@ -45,6 +45,7 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
   const [catalogPage, setCatalogPage] = useState(0);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [listPage, setListPage] = useState(0);
+  const [deleteError, setDeleteError] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -107,6 +108,29 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
     }
   };
 
+  const handleDeleteFromCatalog = async (movie) => {
+    setDeleteError(null);
+    try {
+      await apiCall(config.apiBaseUrl, idToken, 'DELETE', `/movies/${encodeURIComponent(movie.movie_id)}`);
+      await fetchCatalog();
+    } catch (err) {
+      const msg = err.message || '';
+      const match = msg.match(/API error \d+:\s*(.*)/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          if (parsed.queued_by) {
+            setDeleteError(`Cannot delete "${movie.title}" — it is queued by: ${parsed.queued_by.join(', ')}`);
+            return;
+          }
+          setDeleteError(parsed.error || msg);
+          return;
+        } catch {}
+      }
+      setDeleteError(msg || 'Failed to delete movie');
+    }
+  };
+
   // List pagination
   const PAGE_SIZE = 50;
   const listTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -156,31 +180,49 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
   const handleSaveEdit = async () => {
     setSaving(true);
     try {
-      const currentMovie = movies.find((m) => m.movie_id === editing);
-      const body = {
-        title: form.title,
-        year: Number(form.year),
-        genre: form.genre,
-        rating: Number(form.rating),
-        director: form.director,
-        old_sk: currentMovie ? `${currentMovie.status}#${currentMovie.rank}` : undefined,
-      };
+      if (isCatalog) {
+        // Catalog edit: update movie fields only, no queue changes
+        const body = {
+          title: form.title,
+          year: Number(form.year),
+        };
+        if (form.genre) body.genre = form.genre;
+        if (form.rating) body.rating = Number(form.rating);
+        if (form.director) body.director = form.director;
 
-      if (currentMovie && form.status !== currentMovie.status) {
-        const targetList = movies
-          .filter((m) => m.status === form.status)
-          .sort((a, b) => a.rank.localeCompare(b.rank));
-        const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
-        body.status = form.status;
-        body.rank = generateKeyBetween(lastRank, null);
+        await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(editing)}`, body);
+
+        setForm(emptyForm);
+        setShowForm(false);
+        setEditing(null);
+        await fetchCatalog();
+      } else {
+        const currentMovie = movies.find((m) => m.movie_id === editing);
+        const body = {
+          title: form.title,
+          year: Number(form.year),
+          genre: form.genre,
+          rating: Number(form.rating),
+          director: form.director,
+          old_sk: currentMovie ? `${currentMovie.status}#${currentMovie.rank}` : undefined,
+        };
+
+        if (currentMovie && form.status !== currentMovie.status) {
+          const targetList = movies
+            .filter((m) => m.status === form.status)
+            .sort((a, b) => a.rank.localeCompare(b.rank));
+          const lastRank = targetList.length > 0 ? targetList[targetList.length - 1].rank : null;
+          body.status = form.status;
+          body.rank = generateKeyBetween(lastRank, null);
+        }
+
+        await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(editing)}`, body);
+
+        setForm(emptyForm);
+        setShowForm(false);
+        setEditing(null);
+        await onRefresh();
       }
-
-      await apiCall(config.apiBaseUrl, idToken, 'PUT', `/users/${encodeURIComponent(username)}/queue/${encodeURIComponent(editing)}`, body);
-
-      setForm(emptyForm);
-      setShowForm(false);
-      setEditing(null);
-      await onRefresh();
     } catch (err) {
       // error visible in console
     } finally {
@@ -197,6 +239,19 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
       rating: movie.rating || '',
       director: movie.director || '',
       status: movie.status || 'active',
+    });
+    setShowForm(true);
+  };
+
+  const handleCatalogStartEdit = (movie) => {
+    setEditing(movie.movie_id);
+    setForm({
+      title: movie.title || '',
+      year: movie.year || '',
+      genre: movie.genre || '',
+      rating: movie.rating || '',
+      director: movie.director || '',
+      status: '',
     });
     setShowForm(true);
   };
@@ -359,7 +414,6 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
     onStatusChange: handleStatusChange,
     onMoveToTop: () => handleMoveToTop(movie),
     onMoveToBottom: () => handleMoveToBottom(movie),
-    onEdit: () => handleStartEdit(movie),
     onRemoveFromList: () => handleRemoveFromList(movie),
   });
 
@@ -387,6 +441,7 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
           saving={saving}
           movies={movies}
           lists={lists}
+          hideStatus={isCatalog && !!editing}
         />
       )}
 
@@ -399,6 +454,19 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
           />
         ) : isCatalog ? (
           <div>
+            {deleteError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-start gap-3" data-testid="delete-error">
+                <span className="flex-1 text-sm">{deleteError}</span>
+                <button
+                  onClick={() => setDeleteError(null)}
+                  className="text-red-400 hover:text-red-600 shrink-0 cursor-pointer"
+                  aria-label="Dismiss"
+                  data-testid="dismiss-error"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
             <div className="bg-white rounded-2xl shadow-2xl divide-y divide-gray-200">
               {catalogPageMovies.length === 0 && (
                 <p className="text-gray-400 text-sm py-8 text-center">No movies in the catalog.</p>
@@ -409,6 +477,8 @@ export default function MovieList({ movies, config, idToken, username, onRefresh
                   movie={movie}
                   queuedStatus={catalogQueued[movie.movie_id] || null}
                   onAddToQueue={handleAddToQueue}
+                  onDeleteFromCatalog={handleDeleteFromCatalog}
+                  onEdit={handleCatalogStartEdit}
                 />
               ))}
             </div>

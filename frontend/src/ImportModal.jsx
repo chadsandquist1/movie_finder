@@ -348,7 +348,7 @@ export default function ImportModal({ isOpen, onClose, movies, config, idToken, 
                           )}
                         </div>
                         {movie.rating ? (
-                          <span className="text-xs text-gray-500 shrink-0">{movie.rating}/10</span>
+                          <span className="text-xs text-gray-500 shrink-0">{Number(movie.rating).toFixed(1)}/10</span>
                         ) : null}
                       </label>
                     ))}

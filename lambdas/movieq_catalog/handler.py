@@ -3,6 +3,7 @@ import os
 from decimal import Decimal
 
 import boto3
+from boto3.dynamodb.conditions import Attr, Key
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 QUEUE_TABLE_NAME = os.environ["QUEUE_TABLE_NAME"]
@@ -30,8 +31,41 @@ def _response(status_code, body):
     }
 
 
-def lambda_handler(event, context):
-    # Extract username from JWT claims (API Gateway v2 authorizer)
+def _handle_delete(event):
+    """DELETE /movies/{movie_id} — delete a movie from the catalog if no users have it queued."""
+    movie_id = event.get("pathParameters", {}).get("movie_id")
+    if not movie_id:
+        return _response(400, {"error": "movie_id is required"})
+
+    # Check if the movie exists
+    result = movies_table.get_item(Key={"movie_id": movie_id})
+    if "Item" not in result:
+        return _response(404, {"error": "Movie not found"})
+
+    # Scan queue table for any users who have this movie queued
+    queued_by = set()
+    scan_kwargs = {"FilterExpression": Attr("movie_id").eq(movie_id)}
+    while True:
+        response = queue_table.scan(**scan_kwargs)
+        for item in response.get("Items", []):
+            queued_by.add(item["username"])
+        if "LastEvaluatedKey" not in response:
+            break
+        scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    if queued_by:
+        return _response(409, {
+            "error": "Movie is queued by other users",
+            "queued_by": sorted(queued_by),
+        })
+
+    # Safe to delete
+    movies_table.delete_item(Key={"movie_id": movie_id})
+    return _response(200, {"message": "Movie deleted"})
+
+
+def _handle_get(event):
+    """GET /movies — list full catalog with user's queue status."""
     claims = (
         event.get("requestContext", {})
         .get("authorizer", {})
@@ -55,7 +89,7 @@ def lambda_handler(event, context):
     # Query user's queue to build movie_id -> status map
     queued = {}
     result = queue_table.query(
-        KeyConditionExpression=boto3.dynamodb.conditions.Key("username").eq(username),
+        KeyConditionExpression=Key("username").eq(username),
     )
     for item in result.get("Items", []):
         movie_id = item["movie_id"]
@@ -97,3 +131,16 @@ def lambda_handler(event, context):
     all_movies = _convert_decimals(deduped)
 
     return _response(200, {"movies": all_movies, "queued": merged_queued})
+
+
+def lambda_handler(event, context):
+    http_method = (
+        event.get("requestContext", {})
+        .get("http", {})
+        .get("method", "GET")
+    )
+
+    if http_method == "DELETE":
+        return _handle_delete(event)
+
+    return _handle_get(event)

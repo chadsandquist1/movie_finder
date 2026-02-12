@@ -120,6 +120,14 @@ resource "aws_apigatewayv2_route" "get_catalog" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+resource "aws_apigatewayv2_route" "delete_catalog_movie" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "DELETE /movies/{movie_id}"
+  target             = "integrations/${aws_apigatewayv2_integration.movieq_catalog.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
 resource "aws_apigatewayv2_route" "post_omdb_lookup" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "POST /movies/omdb_lookup"

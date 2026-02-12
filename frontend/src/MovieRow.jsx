@@ -14,7 +14,7 @@ const statusKeys = Object.keys(statusLabels);
  * Presentational movie row content — used by both SortableMovieRow and DragOverlay.
  */
 export function MovieRowContent({
-  movie, displayOrder, onStatusChange, onMoveToTop, onMoveToBottom, onEdit, onRemoveFromList,
+  movie, displayOrder, onStatusChange, onMoveToTop, onMoveToBottom, onRemoveFromList,
   isFirst, isLast, dragHandleProps, isDragging, isOverlay,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -82,7 +82,7 @@ export function MovieRowContent({
         ))}
       </select>
       <span className="text-sm font-semibold text-black shrink-0">
-        {movie.rating}<span className="text-gray-400 font-normal">/10</span>
+        {Number(movie.rating).toFixed(1)}<span className="text-gray-400 font-normal">/10</span>
       </span>
 
       {/* Kebab menu */}
@@ -114,13 +114,6 @@ export function MovieRowContent({
               className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"
             >
               Move to Bottom
-            </button>
-            <div className="border-t border-gray-100 my-1" />
-            <button
-              onClick={() => { setMenuOpen(false); onEdit?.(); }}
-              className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              Edit
             </button>
             <div className="border-t border-gray-100 my-1" />
             <button

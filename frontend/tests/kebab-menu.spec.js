@@ -13,7 +13,6 @@ test.describe('Kebab menu', () => {
     await kebabButtons.first().click();
     await expect(page.locator('button:has-text("Move to Top")')).toBeVisible();
     await expect(page.locator('button:has-text("Move to Bottom")')).toBeVisible();
-    await expect(page.locator('button:has-text("Edit")')).toBeVisible();
   });
 
   test('Move to Top is disabled on first item', async ({ page }) => {

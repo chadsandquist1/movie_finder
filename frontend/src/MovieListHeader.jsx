@@ -74,7 +74,7 @@ export default function MovieListHeader({
 
           <span className="text-gray-300 select-none">|</span>
           <h1 className="text-xs sm:text-base font-serif font-bold whitespace-nowrap" style={{ color: '#d2b48c' }}>
-            MojoDojo MovieQ
+            MovieQ
           </h1>
         </div>
 

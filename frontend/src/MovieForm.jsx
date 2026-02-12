@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import titleSimilarity from './titleSimilarity';
 
-export default function MovieForm({ form, setForm, editing, onSave, saving, movies, lists }) {
+export default function MovieForm({ form, setForm, editing, onSave, saving, movies, lists, hideStatus }) {
   const [duplicateError, setDuplicateError] = useState(null);
 
   const handleChange = (updates) => {
@@ -74,17 +74,19 @@ export default function MovieForm({ form, setForm, editing, onSave, saving, movi
             onChange={(e) => handleChange({ director: e.target.value })}
             className="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-black text-sm placeholder:text-gray-400 focus:outline-none focus:border-black transition-colors"
           />
-          <select
-            value={form.status}
-            onChange={(e) => handleChange({ status: e.target.value })}
-            className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-black text-sm focus:outline-none focus:border-black transition-colors"
-          >
-            {lists.map((list) => (
-              <option key={list.key} value={list.key}>
-                {list.label}
-              </option>
-            ))}
-          </select>
+          {!hideStatus && (
+            <select
+              value={form.status}
+              onChange={(e) => handleChange({ status: e.target.value })}
+              className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-black text-sm focus:outline-none focus:border-black transition-colors"
+            >
+              {lists.map((list) => (
+                <option key={list.key} value={list.key}>
+                  {list.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         {duplicateError && (
           <p className="text-red-500 text-sm mt-2">{duplicateError}</p>

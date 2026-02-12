@@ -56,17 +56,25 @@ test.describe('Add / Edit movie', () => {
     await expect(page.locator('h2:has-text("Add Movie")')).toBeVisible();
   });
 
-  test('Edit opens form with movie data pre-filled', async ({ page }) => {
-    // Open kebab menu on first movie
-    const kebabButtons = page.locator('button[aria-label="More options"]');
-    await kebabButtons.first().click();
-    await page.click('button:has-text("Edit")');
+  test('Edit opens form with movie data pre-filled from catalog', async ({ page }) => {
+    // Switch to All Movies view
+    await page.click('text=My List');
+    await page.click('text=All Movies');
+    await expect(page.locator('text=The Dark Knight')).toBeVisible({ timeout: 10000 });
+
+    // Open kebab menu on The Dark Knight
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    await darkKnightRow.locator('[data-testid="catalog-kebab"]').click();
+    await page.locator('[data-testid="catalog-edit-btn"]').click();
 
     await expect(page.locator('h2:has-text("Edit Movie")')).toBeVisible();
     // Title field should be pre-filled
     const titleInput = page.locator('input[placeholder="Title"]');
-    await expect(titleInput).toHaveValue('The Matrix');
+    await expect(titleInput).toHaveValue('The Dark Knight');
     // Update button should be visible
     await expect(page.locator('button:has-text("Update")')).toBeVisible();
+    // Status dropdown should be hidden in catalog edit mode (form area only)
+    const formArea = page.locator('h2:has-text("Edit Movie")').locator('xpath=ancestor::div[contains(@class,"bg-white rounded-2xl shadow-2xl p-6")]');
+    await expect(formArea.locator('select')).toHaveCount(0);
   });
 });

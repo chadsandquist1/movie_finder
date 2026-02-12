@@ -129,6 +129,16 @@ export async function setupMocks(page) {
       });
     }
 
+    // DELETE /movies/{movie_id} → movieq_catalog (delete from catalog)
+    if (method === 'DELETE' && /^\/movies\/[^/]+$/.test(path)) {
+      writeCalls.push({ _method: 'DELETE', path });
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Movie deleted' }),
+      });
+    }
+
     // GET /movies → movieq_catalog
     if (method === 'GET' && path === '/movies') {
       return route.fulfill({

@@ -59,6 +59,92 @@ test.describe('Catalog view', () => {
     }).toPass({ timeout: 5000 });
   });
 
+  test('Add to dropdown includes Delete from Catalog option', async ({ page }) => {
+    await openCatalog(page);
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    const addSelect = darkKnightRow.locator('[data-testid="add-to-select"]');
+    const options = await addSelect.locator('option').allTextContents();
+    expect(options).toContain('Delete from Catalog');
+  });
+
+  test('selecting Delete from Catalog shows confirmation', async ({ page }) => {
+    await openCatalog(page);
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    const addSelect = darkKnightRow.locator('[data-testid="add-to-select"]');
+    await addSelect.selectOption('_delete');
+    const confirm = darkKnightRow.locator('[data-testid="delete-confirm"]');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('Delete');
+    await expect(confirm).toContainText('The Dark Knight');
+  });
+
+  test('cancel confirmation closes it', async ({ page }) => {
+    await openCatalog(page);
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    const addSelect = darkKnightRow.locator('[data-testid="add-to-select"]');
+    await addSelect.selectOption('_delete');
+    await expect(darkKnightRow.locator('[data-testid="delete-confirm"]')).toBeVisible();
+    await darkKnightRow.locator('[data-testid="delete-cancel"]').click();
+    await expect(darkKnightRow.locator('[data-testid="delete-confirm"]')).not.toBeVisible();
+  });
+
+  test('confirming delete sends DELETE request and removes movie', async ({ page }) => {
+    await openCatalog(page);
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    const addSelect = darkKnightRow.locator('[data-testid="add-to-select"]');
+    await addSelect.selectOption('_delete');
+    await darkKnightRow.locator('[data-testid="delete-confirm-btn"]').click();
+    // Verify DELETE was called
+    await expect(async () => {
+      const deleteCalls = writeCalls.filter((c) => c._method === 'DELETE' && c.path === '/movies/id-6');
+      expect(deleteCalls.length).toBe(1);
+    }).toPass({ timeout: 5000 });
+  });
+
+  test('error banner appears when delete fails with 409', async ({ page }) => {
+    await openCatalog(page);
+    // Override the DELETE /movies route to return 409
+    await page.unroute(`${API_BASE_URL}/**`);
+    await page.route(`${API_BASE_URL}/**`, async (route) => {
+      const url = route.request().url();
+      const method = route.request().method();
+      const path = url.replace(API_BASE_URL, '');
+
+      if (method === 'DELETE' && /^\/movies\/[^/]+$/.test(path)) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Movie is queued by other users', queued_by: ['alice', 'bob'] }),
+        });
+      }
+      if (method === 'GET' && path === '/movies') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ movies: CATALOG_MOVIES, queued: CATALOG_QUEUED }),
+        });
+      }
+      if (method === 'GET' && /^\/users\/[^/]+\/queue$/.test(path)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ movies: MOVIES }),
+        });
+      }
+      return route.fulfill({ status: 200, body: '{}' });
+    });
+
+    const darkKnightRow = page.locator('h2:has-text("The Dark Knight")').locator('xpath=ancestor::div[contains(@class,"flex items-center")]');
+    const addSelect = darkKnightRow.locator('[data-testid="add-to-select"]');
+    await addSelect.selectOption('_delete');
+    await darkKnightRow.locator('[data-testid="delete-confirm-btn"]').click();
+    // Error banner should appear
+    const errorBanner = page.locator('[data-testid="delete-error"]');
+    await expect(errorBanner).toBeVisible({ timeout: 5000 });
+    await expect(errorBanner).toContainText('alice');
+    await expect(errorBanner).toContainText('bob');
+  });
+
   test('hides Add Movie and Import buttons in catalog view', async ({ page }) => {
     // Verify buttons are visible in default view
     await expect(page.locator('text=Add Movie')).toBeVisible();
