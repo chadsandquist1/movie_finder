@@ -31,6 +31,21 @@ def _build_movie_item(data, movie_id=None):
     return item
 
 
+def _remove_existing_queue_entries(username, movie_id):
+    """Delete ALL existing queue entries for a (username, movie_id) pair.
+
+    This prevents cross-list duplicates when a movie is moved between lists
+    or re-added from the catalog.
+    """
+    resp = queue_table.query(
+        KeyConditionExpression="username = :u",
+        FilterExpression="movie_id = :m",
+        ExpressionAttributeValues={":u": username, ":m": movie_id},
+    )
+    for item in resp.get("Items", []):
+        queue_table.delete_item(Key={"username": username, "sk": item["sk"]})
+
+
 def _handle_batch_create(movies_list, username):
     """Batch-create multiple movies: write to both movies and queue tables.
 
@@ -38,6 +53,11 @@ def _handle_batch_create(movies_list, username):
     and update the existing movies-table item instead of creating a duplicate.
     """
     movie_ids = []
+    # Remove existing queue entries for movies being re-added (prevents cross-list dupes)
+    for m in movies_list:
+        if m.get("movie_id"):
+            _remove_existing_queue_entries(username, m["movie_id"])
+
     with movies_table.batch_writer() as movie_batch, queue_table.batch_writer() as queue_batch:
         for m in movies_list:
             movie_id = m.get("movie_id") or str(uuid.uuid4())
@@ -91,7 +111,7 @@ def lambda_handler(event, context):
         if not movie_id:
             return _response(400, {"error": "movie_id is required"})
 
-        # Find the queue entry's sk by querying for this user and filtering by movie_id
+        # Find and delete ALL queue entries for this movie (handles duplicates)
         resp = queue_table.query(
             KeyConditionExpression="username = :u",
             FilterExpression="movie_id = :m",
@@ -101,7 +121,8 @@ def lambda_handler(event, context):
         if not items:
             return _response(404, {"error": "Movie not found in queue"})
 
-        queue_table.delete_item(Key={"username": username, "sk": items[0]["sk"]})
+        for item in items:
+            queue_table.delete_item(Key={"username": username, "sk": item["sk"]})
         return _response(200, {"message": "Movie removed from list"})
 
     raw_body = event.get("body")
@@ -149,11 +170,8 @@ def lambda_handler(event, context):
         old_sk = body.get("old_sk")
 
         if new_status is not None or new_rank is not None:
-            # Delete old queue entry if old_sk provided
-            if old_sk:
-                queue_table.delete_item(
-                    Key={"username": username, "sk": old_sk},
-                )
+            # Remove ALL existing queue entries for this movie (prevents cross-list dupes)
+            _remove_existing_queue_entries(username, movie_id)
 
             # Build new sk
             if new_status is not None and new_rank is not None:

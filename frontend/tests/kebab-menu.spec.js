@@ -33,7 +33,7 @@ test.describe('Kebab menu', () => {
     await kebabButtons.first().click();
     await expect(page.locator('button:has-text("Move to Top")')).toBeVisible();
     // Click outside
-    await page.click('h1:has-text("MojoDojo MovieQ")');
+    await page.click('h1:has-text("MovieQ")');
     await expect(page.locator('button:has-text("Move to Top")')).not.toBeVisible();
   });
 
